@@ -17,10 +17,15 @@ def GoAgain() :
         GoAgain()
 
 def hangman() :
-    word = 'sir'
+    word = ''
     wordletters=list(word)
+    LetterCount=len(wordletters)
     usedletters=[]
     correctletters=[]
+    j=0
+    for j in range(LetterCount) :
+        correctletters.append('_')
+        j+=1
     counter=10
     while counter>0 :
         if ''.join(correctletters)==''.join(wordletters):
@@ -33,7 +38,14 @@ def hangman() :
                 letter not in (usedletters)
                 if letter in (wordletters):
                     usedletters.append(letter)
-                    correctletters.append(letter)
+                    i=0
+                    for i in range(LetterCount) :
+                        if i==wordletters.index(letter)  :
+                            correctletters[i] = letter
+                            i+=1
+                        else :
+                            i+=1
+                    print(''.join(correctletters))
                     continue
                 else :
                     usedletters.append(letter)
