@@ -36,7 +36,6 @@ def hangman() :
             letter = input('Input a letter :')
             if letter not in (usedletters) :
                 if letter in (wordletters):
-                    i=0
                     for i in range(LetterCount) :
                         if i==wordletters.index(letter) :
                             correctletters[i] = letter
