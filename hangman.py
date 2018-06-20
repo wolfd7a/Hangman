@@ -17,7 +17,7 @@ def GoAgain() :
         GoAgain()
 
 def hangman() :
-    word = ''
+    word = 'drift'
     wordletters=list(word)
     LetterCount=len(wordletters)
     usedletters=[]
@@ -34,25 +34,24 @@ def hangman() :
             break
         else :
             letter = input('Input a letter :')
-            try :
-                letter not in (usedletters)
+            if letter not in (usedletters) :
                 if letter in (wordletters):
-                    usedletters.append(letter)
                     i=0
                     for i in range(LetterCount) :
-                        if i==wordletters.index(letter)  :
+                        if i==wordletters.index(letter) :
                             correctletters[i] = letter
                             i+=1
                         else :
                             i+=1
                     print(''.join(correctletters))
+                    usedletters.append(letter)
                     continue
                 else :
                     usedletters.append(letter)
                     counter-=1
                     print('This letter is not in the word I chose. '+str(counter)+' attempt(s) left')
                     continue
-            except :
+            else :
                 print('This letter has already been chosen. Choose another one.')
     GoAgain()
 hangman()
