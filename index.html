@@ -2,21 +2,83 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Prince of the Lost Tower</title>
 <style>
   html,body{margin:0;padding:0;background:#0b0806;color:#e8e0d0;font-family:Georgia,'Times New Roman',serif;height:100%;}
   body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;}
   #wrap{position:relative;width:min(96vw,960px);}
-  canvas{display:block;width:100%;image-rendering:pixelated;background:#141009;border:2px solid #3a2d1e;border-radius:4px;box-shadow:0 0 60px rgba(0,0,0,.8);}
-  #hint{font-size:13px;color:#8a7a60;text-align:center;letter-spacing:.5px;}
+  canvas{display:block;width:100%;image-rendering:pixelated;background:#141009;border:2px solid #3a2d1e;border-radius:4px;box-shadow:0 0 60px rgba(0,0,0,.8);touch-action:none;}
+  #hint{font-size:13px;color:#8a7a60;text-align:center;letter-spacing:.5px;padding:0 8px;}
   h1{font-size:18px;letter-spacing:6px;color:#c9a86a;font-weight:normal;margin:8px 0 0;text-transform:uppercase;}
+
+  #touchControls{
+    display:none; width:min(96vw,960px); margin-top:2px;
+    justify-content:space-between; align-items:flex-end;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+  }
+  #touchControls.visible{ display:flex; }
+  .tgroup{ display:flex; align-items:flex-end; gap:10px; }
+  .tbtn{
+    width:54px; height:54px; border-radius:50%;
+    background:rgba(58,45,30,0.55); border:2px solid rgba(201,168,106,0.5);
+    color:#f0e6cf; font-size:20px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    touch-action:none; -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none;
+    padding:0;
+  }
+  .tbtn.active{ background:rgba(201,168,106,0.55); border-color:#f0e6cf; }
+  .tbtn.big{ width:64px; height:64px; font-size:24px; }
+  .tbtn.small{ width:40px; height:40px; font-size:15px; opacity:0.85; }
 </style>
 </head>
 <body>
 <h1>Prince of the Lost Tower</h1>
 <div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
-<div id="hint">&#8592;&#8594; run &nbsp;&middot;&nbsp; Shift walk (safe past spikes) &nbsp;&middot;&nbsp; &#8593;/Space jump &amp; climb &nbsp;&middot;&nbsp; &#8595; drop / pull lever &nbsp;&middot;&nbsp; X attack &nbsp;&middot;&nbsp; Z parry</div>
+<div id="hint">&#8592;&#8594; run &nbsp;&middot;&nbsp; Shift walk (safe past spikes) &nbsp;&middot;&nbsp; &#8593;/Space jump &amp; climb &nbsp;&middot;&nbsp; &#8595; drop / pull lever &nbsp;&middot;&nbsp; X attack &nbsp;&middot;&nbsp; Z parry &nbsp;&middot;&nbsp; P pause</div>
+
+<div id="touchControls">
+  <div class="tgroup">
+    <button class="tbtn" data-key="ArrowLeft" aria-label="Left">&#9664;</button>
+    <button class="tbtn" data-key="ArrowRight" aria-label="Right">&#9654;</button>
+    <button class="tbtn small" data-key="ArrowDown" aria-label="Down">&#9660;</button>
+    <button class="tbtn small" data-key="ShiftLeft" aria-label="Walk">&#128034;</button>
+  </div>
+  <div class="tgroup">
+    <button class="tbtn small" data-key="KeyZ" aria-label="Parry">&#128737;</button>
+    <button class="tbtn" data-key="KeyX" aria-label="Attack">&#9876;</button>
+    <button class="tbtn big" data-key="Space" aria-label="Jump">&#11014;</button>
+  </div>
+</div>
+
 <script src="game.js"></script>
+<script>
+(function(){
+  var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  var ui = document.getElementById('touchControls');
+  if (!isTouch) return;
+  ui.classList.add('visible');
+  document.getElementById('hint').textContent = 'Use the on-screen controls below — tap the tower to start or continue.';
+
+  ui.querySelectorAll('.tbtn').forEach(function(btn){
+    var code = btn.dataset.key;
+    var down = function(ev){ ev.preventDefault(); pressKey(code); btn.classList.add('active'); };
+    var up = function(ev){ ev.preventDefault(); releaseKey(code); btn.classList.remove('active'); };
+    btn.addEventListener('pointerdown', down);
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', up);
+    btn.addEventListener('pointerleave', up);
+    btn.addEventListener('contextmenu', function(ev){ ev.preventDefault(); });
+  });
+
+  // tapping the tower itself advances title/death/win/pause screens, mirroring Enter
+  var canvas = document.getElementById('game');
+  canvas.addEventListener('pointerdown', function(ev){
+    if (typeof state !== 'undefined' && state !== 'play') { ev.preventDefault(); pressKey('Enter'); }
+  });
+  canvas.addEventListener('pointerup', function(ev){ releaseKey('Enter'); });
+})();
+</script>
 </body>
 </html>
