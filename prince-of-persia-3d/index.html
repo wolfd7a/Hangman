@@ -3,14 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Prince of the Lost Tower</title>
+<title>Prince of the Lost Tower — 3D</title>
 <style>
   html,body{margin:0;padding:0;background:#0b0806;color:#e8e0d0;font-family:Georgia,'Times New Roman',serif;height:100%;}
   body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;}
   #wrap{position:relative;width:min(96vw,960px);}
-  canvas{display:block;width:100%;image-rendering:pixelated;background:#141009;border:2px solid #3a2d1e;border-radius:4px;box-shadow:0 0 60px rgba(0,0,0,.8);touch-action:none;}
+  #wrap::before{content:'';display:block;padding-top:56.25%;}
+  #stage{position:absolute;inset:0;border:2px solid #3a2d1e;border-radius:4px;box-shadow:0 0 60px rgba(0,0,0,.8);overflow:hidden;background:#05030a;}
+  #gl,#hud{position:absolute;inset:0;width:100%;height:100%;touch-action:none;}
+  #hud{pointer-events:none;}
   #hint{font-size:13px;color:#8a7a60;text-align:center;letter-spacing:.5px;padding:0 8px;}
   h1{font-size:18px;letter-spacing:6px;color:#c9a86a;font-weight:normal;margin:8px 0 0;text-transform:uppercase;}
+  #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#c9a86a;font-size:14px;letter-spacing:2px;background:#05030a;z-index:5;}
 
   #touchControls{
     display:none; width:min(96vw,960px); margin-top:2px;
@@ -34,10 +38,16 @@
 </style>
 </head>
 <body>
-<h1>Prince of the Lost Tower</h1>
-<div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
+<h1>Prince of the Lost Tower — 3D</h1>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <canvas id="hud"></canvas>
+    <div id="loading">AWAKENING THE TOWER&hellip;</div>
+  </div>
+</div>
 <div id="hint">&#8592;&#8594; run &nbsp;&middot;&nbsp; Shift walk (safe past spikes) &nbsp;&middot;&nbsp; &#8593;/Space jump &amp; climb &nbsp;&middot;&nbsp; &#8595; drop / pull lever &nbsp;&middot;&nbsp; X attack &nbsp;&middot;&nbsp; Z parry &nbsp;&middot;&nbsp; P pause</div>
-<div style="font-size:12px;"><a href="3d/" style="color:#c9a86a;">Play the 3D version &rarr;</a></div>
+<div style="font-size:12px;"><a href="../" style="color:#c9a86a;">&larr; Play the 2D version</a></div>
 
 <div id="touchControls">
   <div class="tgroup">
@@ -53,6 +63,7 @@
   </div>
 </div>
 
+<script src="vendor/three.min.js"></script>
 <script src="game.js"></script>
 <script>
 (function(){
@@ -73,12 +84,11 @@
     btn.addEventListener('contextmenu', function(ev){ ev.preventDefault(); });
   });
 
-  // tapping the tower itself advances title/death/win/pause screens, mirroring Enter
-  var canvas = document.getElementById('game');
-  canvas.addEventListener('pointerdown', function(ev){
+  var stage = document.getElementById('stage');
+  stage.addEventListener('pointerdown', function(ev){
     if (typeof state !== 'undefined' && state !== 'play') { ev.preventDefault(); pressKey('Enter'); }
   });
-  canvas.addEventListener('pointerup', function(ev){ releaseKey('Enter'); });
+  stage.addEventListener('pointerup', function(){ releaseKey('Enter'); });
 })();
 </script>
 </body>
