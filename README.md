@@ -17,7 +17,12 @@ Open `index.html` in any modern browser. That's it.
 | ↓ / S | Drop from a ledge · pull the **lever** |
 | X / J | Sword attack (once you have a sword) |
 | Z / K (hold) | Parry the guard's strike |
+| P / Esc | Pause |
 | Enter | Start / respawn / restart |
+
+Jumps are forgiving: a short **coyote window** after running off a ledge, a
+**buffered** jump if you press slightly before landing, and **variable height**
+(release early for a hop). Your best escape time is remembered between visits.
 
 ## The level
 
