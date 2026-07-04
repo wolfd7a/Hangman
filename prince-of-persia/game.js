@@ -810,108 +810,430 @@ function drawWorld(){
   ctx.restore();
 }
 
+// ---------- pixel-art sprites ----------
+// 16x24 frames, authored facing right, baked to offscreen canvases at load.
+const FRAME_W = 16, FRAME_H = 24, SPR_SCALE = 2;
+const FRAMES = {
+idle: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt......",
+"....tttttttt....",
+"....t.tttt.t....",
+"....s.tttt.s....",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......f..f......",
+".....ff..ff.....",
+],
+run0: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt......",
+"....tttttttt....",
+"....t.tttt.ts...",
+"...s..tttt......",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......l.ll......",
+".....ll...l.....",
+"....ll....l.....",
+"....l......l....",
+"...ll......ll...",
+"...f........l...",
+".............l..",
+".............l..",
+".............f..",
+],
+run1: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt......",
+"....tttttttt....",
+"....t.tttt.t....",
+"....s.tttt.s....",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......lll.......",
+"......ll........",
+"......ll........",
+"......l.l.......",
+"......l.l.......",
+"......l..l......",
+"......l..f......",
+"......l.........",
+"......f.........",
+],
+run2: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt......",
+"....tttttttt....",
+"....t.tttt.t....",
+"....s.tttt.s....",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......ll.l......",
+".....l...ll.....",
+".....l....ll....",
+"....l......l....",
+"..ll......ll....",
+"..l........f....",
+"..l.............",
+"..l.............",
+"..f.............",
+],
+run3: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt......",
+"....tttttttt....",
+"....t.tttt.t....",
+"....s.tttt.s....",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+".......lll......",
+"........ll......",
+"........ll......",
+".......l.l......",
+".......l.l......",
+"......l..l......",
+"......f..l......",
+".........l......",
+".........f......",
+],
+jump: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt..s...",
+"....tttttttt....",
+"..s.t.tttt......",
+"......tttt......",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+".....ll..ll.....",
+"....ll....ll....",
+"...ll......ll...",
+"...f........ll..",
+".............f..",
+"................",
+"................",
+"................",
+"................",
+],
+fall: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"...s..tttt..s...",
+"....tttttttt....",
+"...t.tttt..t....",
+"......tttt......",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......l..l......",
+".....l....l.....",
+".....l....l.....",
+"......l..l......",
+"......f..f......",
+"................",
+"................",
+"................",
+"................",
+],
+hang: [
+"....s......s....",
+"....t......t....",
+"....t.hhhh.t....",
+"....t.hhhh.t....",
+"....t.ssss.t....",
+"......ssse......",
+".......ss.......",
+"......tttt......",
+".....tttttt.....",
+"......tttt......",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+".....l...l......",
+".....l..l.......",
+".....f..f.......",
+"................",
+"................",
+"................",
+"................",
+"................",
+],
+climb: [
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"......hhhh......",
+".....hhhhhh.s...",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+"......tttt......",
+"....tttttttt....",
+"....s.tttt......",
+"......dddd......",
+"......bbbb......",
+".....llllll.....",
+"....ll....ll....",
+"....l......l....",
+"....f......f....",
+"................",
+"................",
+"................",
+"................",
+],
+raise: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.s...",
+"......ssss..t...",
+".......ss..t....",
+"......tttt.t....",
+"....tttttttt....",
+"....t.tttt......",
+"....s.tttt......",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......f..f......",
+".....ff..ff.....",
+],
+thrust: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt......",
+"....tttttttt....",
+"....t.ttttttsss.",
+"....s.tttt......",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......l.ll......",
+".....ll...l.....",
+"....ll....l.....",
+"....l......l....",
+"...ll......ll...",
+"...f........l...",
+".............l..",
+".............l..",
+".............f..",
+],
+block: [
+"................",
+"......hhhh......",
+".....hhhhhh.....",
+".....hhssss.....",
+".....hsssse.....",
+"......ssss......",
+".......ss.......",
+"......tttt......",
+"....tttttttt....",
+"....t.tttt.ts...",
+"....s.tttt......",
+"......dddd......",
+"......bbbb......",
+".....tttttt.....",
+".....tttttt.....",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......l..l......",
+"......f..f......",
+".....ff..ff.....",
+],
+slump: [
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"......tttt......",
+"..hh.tttttttt...",
+".hsstttttttttl..",
+".tttttttttttll..",
+"..t..........f..",
+],
+};
+// hand pixel (sprite coords) per frame, anchoring the sword overlay
+const HAND = {
+  idle: [11,10], run0: [12,9], run1: [11,10], run2: [11,10], run3: [11,10],
+  jump: [12,7], fall: [12,7], climb: [12,7],
+  raise: [12,4], thrust: [14,9], block: [12,9],
+};
+const PAL_PRINCE = { h:'#3a2a18', s:'#d8a878', e:'#1c1008', t:'#e8e0d0', d:'#c8bda3', b:'#8a5a28', l:'#ded6c2', f:'#7a5a2c' };
+const PAL_GUARD  = { h:'#4a4a58', s:'#c08a58', e:'#140b04', t:'#8a2a22', d:'#5e1c16', b:'#caa84a', l:'#3c3140', f:'#241a14' };
+
+function bakeFrame(rows, pal, white){
+  const c = document.createElement('canvas');
+  c.width = FRAME_W; c.height = FRAME_H;
+  const g = c.getContext('2d');
+  for (let y = 0; y < FRAME_H; y++) {
+    const row = (rows[y] || '').padEnd(FRAME_W, '.');
+    for (let x = 0; x < FRAME_W; x++) {
+      const ch = row[x];
+      if (ch === '.' || ch === ' ') continue;
+      g.fillStyle = white ? '#ffffff' : (pal[ch] || '#ff00ff');
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  return c;
+}
+const SPRITES = { prince: {}, guard: {}, princeW: {}, guardW: {} };
+for (const name in FRAMES) {
+  SPRITES.prince[name]  = bakeFrame(FRAMES[name], PAL_PRINCE, false);
+  SPRITES.guard[name]   = bakeFrame(FRAMES[name], PAL_GUARD, false);
+  SPRITES.princeW[name] = bakeFrame(FRAMES[name], PAL_PRINCE, true);
+  SPRITES.guardW[name]  = bakeFrame(FRAMES[name], PAL_GUARD, true);
+}
+
+function pickFrame(f, isGuard){
+  if (f.dead) return 'slump';
+  if (f.hang) return 'hang';
+  if (f.climbT > 0) return 'climb';
+  const attacking = (f.attackT || 0) > 0 || (f.telegraphT || 0) > 0 || (f.strikeT || 0) > 0;
+  if (attacking) {
+    const raised = (f.attackT || 0) > 0.2 || (f.telegraphT || 0) > 0;
+    return raised ? 'raise' : 'thrust';
+  }
+  if (!isGuard && held.block() && f.hasSword && f.onGround) return 'block';
+  if (!f.onGround) return f.vy < 0 ? 'jump' : 'fall';
+  if (Math.abs(f.vx) > 20) return 'run' + (Math.floor(f.runPhase || 0) % 4);
+  return 'idle';
+}
+
 function drawFigure(f, isGuard){
   const cx = f.x + f.w / 2;
   const bottom = f.y + f.h;
   const flash = (f.hurtT > 0 && Math.floor(tNow * 14) % 2 === 0);
+  const frame = pickFrame(f, isGuard);
+  const set = flash ? (isGuard ? 'guardW' : 'princeW') : (isGuard ? 'guard' : 'prince');
+  const img = SPRITES[set][frame];
+
   ctx.save();
-  ctx.translate(cx, bottom);
+  ctx.translate(Math.round(cx), Math.round(bottom));
   ctx.scale(f.dir || 1, 1);
+  const bob = (frame === 'idle') ? Math.round(Math.sin(tNow * 2.2) + 0.5) : 0;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, -FRAME_W, -FRAME_H * SPR_SCALE + bob, FRAME_W * SPR_SCALE, FRAME_H * SPR_SCALE);
 
-  const cloth = isGuard ? (flash ? '#ffd0c0' : '#8a2a22') : (flash ? '#fff' : '#e8e0d0');
-  const skin = isGuard ? '#c89060' : '#d8a878';
-  const dead = f.dead;
-
-  if (dead && isGuard) {
-    // slumped guard
-    ctx.fillStyle = '#6a1f1a';
-    ctx.fillRect(-16, -10, 32, 10);
-    ctx.fillStyle = skin;
-    ctx.beginPath(); ctx.arc(-18, -8, 5, 0, 7); ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  const run = f.onGround && Math.abs(f.vx) > 20;
-  const ph = (f.runPhase || tNow * 6);
-  const legA = run ? Math.sin(ph) * 0.7 : 0;
-  const legB = run ? Math.sin(ph + Math.PI) * 0.7 : 0;
-  const air = !f.onGround && !f.hang;
-
-  // legs
-  ctx.strokeStyle = cloth; ctx.lineWidth = 5; ctx.lineCap = 'round';
-  ctx.beginPath();
-  if (f.hang) {
-    ctx.moveTo(0, -20); ctx.lineTo(-2, -6); ctx.lineTo(-5, 0);
-    ctx.moveTo(0, -20); ctx.lineTo(3, -8); ctx.lineTo(1, -1);
-  } else if (air) {
-    ctx.moveTo(0, -20); ctx.lineTo(7, -10); ctx.lineTo(12, -2);
-    ctx.moveTo(0, -20); ctx.lineTo(-6, -12); ctx.lineTo(-10, -8);
-  } else {
-    ctx.moveTo(0, -20); ctx.lineTo(Math.sin(legA) * 9, -10); ctx.lineTo(Math.sin(legA) * 12, 0);
-    ctx.moveTo(0, -20); ctx.lineTo(Math.sin(legB) * 9, -10); ctx.lineTo(Math.sin(legB) * 12, 0);
-  }
-  ctx.stroke();
-
-  // torso
-  ctx.strokeStyle = cloth; ctx.lineWidth = 7;
-  ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(0, -34); ctx.stroke();
-
-  // head
-  ctx.fillStyle = skin;
-  ctx.beginPath(); ctx.arc(1, -39, 5, 0, 7); ctx.fill();
-  if (isGuard) { // helm
-    ctx.fillStyle = '#4a4a55';
-    ctx.beginPath(); ctx.arc(1, -40, 5.5, Math.PI, 0); ctx.fill();
-    ctx.fillRect(-4.5, -40, 11, 2);
-  } else { // hair
-    ctx.fillStyle = '#3a2a18';
-    ctx.beginPath(); ctx.arc(0, -41, 4.5, Math.PI * 0.9, Math.PI * 2.05); ctx.fill();
-  }
-
-  // arms + sword
-  ctx.strokeStyle = cloth; ctx.lineWidth = 4;
-  const attacking = (f.attackT || 0) > 0 || (f.telegraphT || 0) > 0 || (f.strikeT || 0) > 0;
-  const hasSword = isGuard || f.hasSword;
-  ctx.beginPath();
-  if (f.hang) {
-    ctx.moveTo(0, -32); ctx.lineTo(4, -42); ctx.lineTo(7, -48);
-    ctx.moveTo(0, -32); ctx.lineTo(6, -40); ctx.lineTo(9, -47);
-  } else if (attacking) {
-    const lunge = (f.attackT > 0.2 || (f.telegraphT || 0) > 0) ? 0 : 1;
-    ctx.moveTo(0, -31); ctx.lineTo(8 + lunge * 6, -30);
-    ctx.moveTo(0, -31); ctx.lineTo(-5, -26);
-  } else if (hasSword) {
-    ctx.moveTo(0, -31); ctx.lineTo(7, -27);
-    ctx.moveTo(0, -31); ctx.lineTo(-6, -26);
-  } else {
-    const sw = run ? Math.sin(ph) * 5 : 0;
-    ctx.moveTo(0, -31); ctx.lineTo(6 + sw, -24);
-    ctx.moveTo(0, -31); ctx.lineTo(-6 - sw, -24);
-  }
-  ctx.stroke();
-
-  if (hasSword && !f.hang && !dead) {
-    ctx.strokeStyle = '#dfe3ea'; ctx.lineWidth = 2.5;
+  // sword overlay, anchored to the hand pixel of the current frame
+  const hasSword = (isGuard || f.hasSword) && !f.dead && !f.hang && HAND[frame];
+  if (hasSword) {
+    const hx = -FRAME_W + HAND[frame][0] * SPR_SCALE;
+    const hy = -FRAME_H * SPR_SCALE + HAND[frame][1] * SPR_SCALE + bob;
+    ctx.strokeStyle = '#dfe3ea'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
     ctx.beginPath();
-    if (attacking) {
-      const lunge = (f.attackT > 0.2 || (f.telegraphT || 0) > 0);
-      if (lunge) { ctx.moveTo(8, -30); ctx.lineTo(14, -44); } // raised
-      else { ctx.moveTo(14, -30); ctx.lineTo(34, -30); }       // thrust
-    } else {
-      ctx.moveTo(7, -27); ctx.lineTo(16, -38);
-    }
+    if (frame === 'raise') { ctx.moveTo(hx, hy); ctx.lineTo(hx + 4, hy - 16); }
+    else if (frame === 'thrust') { ctx.moveTo(hx, hy + 1); ctx.lineTo(hx + 19, hy + 1); }
+    else if (frame === 'block') { ctx.moveTo(hx + 3, hy - 10); ctx.lineTo(hx + 3, hy + 9); }
+    else { ctx.moveTo(hx, hy); ctx.lineTo(hx + 9, hy - 12); }
     ctx.stroke();
-  }
-  // telegraph gleam
-  if ((f.telegraphT || 0) > 0) {
-    ctx.fillStyle = 'rgba(255,220,120,0.8)';
-    ctx.beginPath(); ctx.arc(14, -44, 3 + Math.sin(tNow * 30) * 1.5, 0, 7); ctx.fill();
-  }
-  // block pose hint
-  if (!isGuard && held.block() && f.hasSword && f.onGround) {
-    ctx.strokeStyle = 'rgba(200,220,255,0.9)'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(10, -42); ctx.lineTo(12, -22); ctx.stroke();
+    ctx.strokeStyle = '#8a6a30'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(hx - 2, hy + 2); ctx.lineTo(hx + 2, hy - 2); ctx.stroke();
+    // telegraph gleam at the raised blade tip
+    if ((f.telegraphT || 0) > 0) {
+      ctx.fillStyle = 'rgba(255,220,120,0.8)';
+      ctx.beginPath(); ctx.arc(hx + 4, hy - 16, 3 + Math.sin(tNow * 30) * 1.5, 0, 7); ctx.fill();
+    }
   }
   ctx.restore();
 }
@@ -1021,4 +1343,19 @@ function frame(now){
   keyEdge = {};
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+
+if (location.hash === '#sprites') {
+  // debug: render the whole sprite sheet instead of the game
+  ctx.fillStyle = '#1c1c22'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.imageSmoothingEnabled = false;
+  const names = Object.keys(FRAMES);
+  names.forEach((n, i) => {
+    const x = 14 + i * 72;
+    ctx.fillStyle = '#9a9a9a'; ctx.font = '10px monospace';
+    ctx.fillText(n, x, 30);
+    ctx.drawImage(SPRITES.prince[n], x, 40, FRAME_W * 4, FRAME_H * 4);
+    ctx.drawImage(SPRITES.guard[n], x, 160, FRAME_W * 4, FRAME_H * 4);
+  });
+} else {
+  requestAnimationFrame(frame);
+}
