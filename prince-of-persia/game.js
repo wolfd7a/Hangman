@@ -1500,17 +1500,53 @@ const HAND = {
 const PAL_PRINCE = { h:'#3a2a18', s:'#d8a878', e:'#1c1008', t:'#e8e0d0', d:'#c8bda3', b:'#8a5a28', l:'#ded6c2', f:'#7a5a2c' };
 const PAL_GUARD  = { h:'#4a4a58', s:'#c08a58', e:'#140b04', t:'#8a2a22', d:'#5e1c16', b:'#caa84a', l:'#3c3140', f:'#241a14' };
 
+const SPR_PAD = 1; // 1px padding around each frame so the outline pass has room to draw
+// materials that get automatic rim-light/shadow shading from their own silhouette;
+// thin one-pixel-wide strokes (legs, belt, boots) are left flat — shading a 1px line
+// just recolors it solid rather than reading as a highlight
+const SHADE_KEYS = { s: true, t: true, h: true };
+function shadeColor(hex, amt){
+  const n = parseInt(hex.slice(1), 16);
+  const clamp = v => Math.max(0, Math.min(255, v));
+  const r = clamp(((n >> 16) & 255) + amt);
+  const g = clamp(((n >> 8) & 255) + amt);
+  const b = clamp((n & 255) + amt);
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
 function bakeFrame(rows, pal, white){
+  const solid = rows.map(r => (r || '').padEnd(FRAME_W, '.'));
+  const at = (x, y) => (x >= 0 && x < FRAME_W && y >= 0 && y < FRAME_H) ? solid[y][x] : '.';
+  const isBg = ch => ch === '.' || ch === ' ';
+
   const c = document.createElement('canvas');
-  c.width = FRAME_W; c.height = FRAME_H;
+  c.width = FRAME_W + SPR_PAD * 2; c.height = FRAME_H + SPR_PAD * 2;
   const g = c.getContext('2d');
+
+  if (!white) { // 1px dark outline around the whole silhouette — the sprite pops off dark backgrounds
+    g.fillStyle = '#0e0906';
+    for (let y = 0; y < FRAME_H; y++) for (let x = 0; x < FRAME_W; x++) {
+      if (isBg(at(x, y))) continue;
+      for (const [ox, oy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        if (isBg(at(x + ox, y + oy))) g.fillRect(x + SPR_PAD + ox, y + SPR_PAD + oy, 1, 1);
+      }
+    }
+  }
+
   for (let y = 0; y < FRAME_H; y++) {
-    const row = (rows[y] || '').padEnd(FRAME_W, '.');
     for (let x = 0; x < FRAME_W; x++) {
-      const ch = row[x];
-      if (ch === '.' || ch === ' ') continue;
-      g.fillStyle = white ? '#ffffff' : (pal[ch] || '#ff00ff');
-      g.fillRect(x, y, 1, 1);
+      const ch = solid[y][x];
+      if (isBg(ch)) continue;
+      let color = white ? '#ffffff' : (pal[ch] || '#ff00ff');
+      if (!white && SHADE_KEYS[ch]) {
+        // simple rim shading: an upper/left silhouette edge catches torchlight,
+        // a lower/right edge falls into its own shadow
+        const rim = isBg(at(x - 1, y)) || isBg(at(x, y - 1));
+        const shadow = isBg(at(x + 1, y)) || isBg(at(x, y + 1));
+        if (rim) color = shadeColor(color, 24);
+        else if (shadow) color = shadeColor(color, -20);
+      }
+      g.fillStyle = color;
+      g.fillRect(x + SPR_PAD, y + SPR_PAD, 1, 1);
     }
   }
   return c;
@@ -1563,8 +1599,34 @@ function drawFigure(f, isGuard){
     ctx.fillRect(-34, -56, 68, 68);
   }
   const bob = (frame === 'idle') ? Math.round(Math.sin(tNow * 2.2) + 0.5) : 0;
+  if (isGuard && !f.dead) { // a cape, swaying behind him — gives the guard his own silhouette
+    const sway = Math.sin(tNow * 2.6 + f.homeX * 0.05) * 2.5 - (f.vx || 0) * 0.012;
+    ctx.fillStyle = '#4a1712';
+    ctx.beginPath();
+    ctx.moveTo(-4, -44);
+    ctx.quadraticCurveTo(-13 + sway, -30, -11 + sway * 1.6, -6);
+    ctx.lineTo(-4, -10);
+    ctx.lineTo(-4, -44);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#341009';
+    ctx.beginPath();
+    ctx.moveTo(-4, -40);
+    ctx.quadraticCurveTo(-9 + sway * 0.7, -28, -8 + sway, -8);
+    ctx.lineTo(-5, -10);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, -FRAME_W, -FRAME_H * SPR_SCALE + bob, FRAME_W * SPR_SCALE, FRAME_H * SPR_SCALE);
+  const destW = (FRAME_W + SPR_PAD * 2) * SPR_SCALE, destH = (FRAME_H + SPR_PAD * 2) * SPR_SCALE;
+  const destX = -FRAME_W - SPR_PAD * SPR_SCALE, destY = -FRAME_H * SPR_SCALE + bob - SPR_PAD * SPR_SCALE;
+  ctx.drawImage(img, destX, destY, destW, destH);
+  if (isGuard && !f.dead) { // helmet plume, in front, above the head
+    ctx.fillStyle = '#8a2a22';
+    ctx.beginPath();
+    ctx.moveTo(3, -48); ctx.lineTo(8, -60); ctx.lineTo(4, -51); ctx.lineTo(9, -54); ctx.lineTo(3, -46);
+    ctx.closePath(); ctx.fill();
+  }
 
   // sword overlay, anchored to the hand pixel of the current frame
   const hasSword = (isGuard || f.hasSword) && !f.dead && !f.hang && HAND[frame];
@@ -1830,8 +1892,9 @@ if (location.hash === '#sprites') {
     const x = 14 + i * 72;
     ctx.fillStyle = '#9a9a9a'; ctx.font = '10px monospace';
     ctx.fillText(n, x, 30);
-    ctx.drawImage(SPRITES.prince[n], x, 40, FRAME_W * 4, FRAME_H * 4);
-    ctx.drawImage(SPRITES.guard[n], x, 160, FRAME_W * 4, FRAME_H * 4);
+    const dw = (FRAME_W + SPR_PAD * 2) * 4, dh = (FRAME_H + SPR_PAD * 2) * 4;
+    ctx.drawImage(SPRITES.prince[n], x, 40, dw, dh);
+    ctx.drawImage(SPRITES.guard[n], x, 160, dw, dh);
   });
 } else {
   requestAnimationFrame(frame);
