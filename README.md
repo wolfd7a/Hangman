@@ -57,7 +57,11 @@ drifting dust motes, contact shadows, sword-swing arcs, and a vignette.
 Characters are hand-authored 16×24 pixel-art sprite sheets (idle, 4-frame run
 cycle, jump, fall, hang, climb, sword poses) baked to offscreen canvases with
 palette swaps for the prince and the guard — no external assets, everything
-is drawn in code. Open `index.html#sprites` to view the sprite sheet.
+is drawn in code. Baking also applies a 1px silhouette outline and automatic
+rim-light/shadow shading computed from each frame's own pixels (no hand-tinted
+art), and the guard gets a swaying cape and helmet plume so he reads as his
+own character rather than a recolored prince. Open `index.html#sprites` to
+view the sprite sheet.
 
 A procedural WebAudio ambience (a low drone plus filtered wind noise) plays
 underneath the synth sound effects, all routed through a single mutable
