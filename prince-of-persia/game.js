@@ -82,7 +82,9 @@ const W = 96, H = 24;
 let grid, gates, plates, chompers, looseTiles, potions, lever, door, sword,
     checkpoints, guard, player, particles, fallingTiles, torches;
 let camX = 0, camY = 0, shake = 0;
-let timeLeft, message, messageT, state, winT;
+let timeLeft, message, messageT, state, winT, deathT = 0, hitstop = 0;
+let bestTime = null;
+try { bestTime = +localStorage.getItem('pop_best_time') || null; } catch (e) {}
 
 function makeGrid(){
   const g = [];
@@ -170,7 +172,7 @@ function resetLevel(){
     onGround: false, hp: 3, maxHp: 3,
     hasSword: false, attackT: 0, hurtT: 0, dead: false, deathMsg: '',
     hang: null, climbT: 0, climbFrom: null, climbTo: null,
-    peakY: 0, runPhase: 0,
+    peakY: 0, runPhase: 0, coyote: 0, jumpBuf: 0, look: 0,
     checkpoint: { x: start.x, y: start.y },
   };
   player.peakY = player.y;
@@ -178,7 +180,7 @@ function resetLevel(){
   guard = guardPos ? {
     x: guardPos.x * TILE + 4, y: (guardPos.y + 1) * TILE - 46,
     w: 22, h: 45, vx: 0, vy: 0, dir: -1,
-    onGround: false, hp: 3, dead: false,
+    onGround: false, hp: 3, dead: false, blockT: 0,
     homeX: guardPos.x * TILE, thinkT: 1.2, telegraphT: 0, strikeT: 0, hurtT: 0,
   } : null;
 
@@ -250,7 +252,8 @@ function killPlayer(msg){
   player.hp = 0;
   sfx('die');
   shake = 10;
-  state = 'dead';
+  deathT = 0.8;
+  state = 'dying';
 }
 function respawn(){
   const cp = player.checkpoint;
@@ -309,12 +312,15 @@ function updatePlayer(dt){
   else if (p.vx > target) p.vx = Math.max(p.vx - accel * dt, target);
   if (dx !== 0) p.dir = dx;
 
-  // --- jump ---
-  if (edge.up() && p.onGround && p.attackT <= 0) {
+  // --- jump: coyote time + input buffer + variable height ---
+  if (p.onGround) p.coyote = 0.1; else p.coyote -= dt;
+  if (edge.up()) p.jumpBuf = 0.13; else p.jumpBuf -= dt;
+  if (p.jumpBuf > 0 && p.coyote > 0 && p.attackT <= 0) {
     p.vy = JUMP_V;
-    p.onGround = false;
+    p.onGround = false; p.coyote = 0; p.jumpBuf = 0;
     sfx('jump');
   }
+  if (!held.up() && p.vy < -280) p.vy = -280; // release early for a shorter hop
 
   // --- attack ---
   if (edge.attack() && p.hasSword && p.onGround && p.attackT <= 0) {
@@ -324,12 +330,23 @@ function updatePlayer(dt){
       const gx = guard.x + guard.w / 2, px = p.x + p.w / 2;
       const sameFloor = Math.abs((guard.y + guard.h) - (p.y + p.h)) < 20;
       if (sameFloor && Math.abs(gx - px) < TILE * 1.5 && Math.sign(gx - px) === p.dir) {
-        guard.hp -= 1; guard.hurtT = 0.4; guard.telegraphT = 0; guard.strikeT = 0;
-        guard.x += p.dir * 10;
-        sfx('clang'); shake = Math.max(shake, 3);
-        if (guard.hp <= 0) {
-          guard.dead = true;
-          showMessage('The guard is defeated.');
+        // the guard can block when he isn't mid-attack
+        const guardBlocks = guard.telegraphT <= 0 && guard.strikeT <= 0 &&
+                            Math.sin(tNow * 9.7 + guard.homeX) > 0.25;
+        if (guardBlocks) {
+          guard.blockT = 0.3;
+          hitstop = Math.max(hitstop, 0.06);
+          sfx('clang');
+          p.x -= p.dir * 6; // bounced off
+        } else {
+          guard.hp -= 1; guard.hurtT = 0.4; guard.telegraphT = 0; guard.strikeT = 0;
+          guard.x += p.dir * 10;
+          hitstop = Math.max(hitstop, 0.09);
+          sfx('clang'); shake = Math.max(shake, 3);
+          if (guard.hp <= 0) {
+            guard.dead = true;
+            showMessage('The guard is defeated.');
+          }
         }
       }
     }
@@ -415,7 +432,14 @@ function updatePlayer(dt){
   // exit door
   if (door.open && door.anim > 0.9) {
     for (const c of door.cells) {
-      if (ptx === c.x && Math.abs(pty - c.y) <= 1) { state = 'win'; winT = 0; sfx('win'); }
+      if (ptx === c.x && Math.abs(pty - c.y) <= 1 && state === 'play') {
+        state = 'win'; winT = 0; sfx('win');
+        const used = TIME_LIMIT - timeLeft;
+        if (!bestTime || used < bestTime) {
+          bestTime = used;
+          try { localStorage.setItem('pop_best_time', String(bestTime)); } catch (e) {}
+        }
+      }
     }
   }
 
@@ -451,6 +475,7 @@ function updatePlayer(dt){
 function updateGuard(dt){
   const g = guard;
   if (!g || g.dead) return;
+  if (g.blockT > 0) g.blockT -= dt;
   if (g.hurtT > 0) { g.hurtT -= dt; g.vx = 0; moveEnt(g, dt); return; }
   const p = player;
   const gx = g.x + g.w / 2, px = p.x + p.w / 2;
@@ -473,8 +498,14 @@ function updateGuard(dt){
         if (g.telegraphT <= 0) {
           // strike lands now
           if (dist < TILE * 1.7 && sameFloor) {
-            if (held.block() && p.onGround) { sfx('clang'); showMessage('Parried!', 1); shake = Math.max(shake, 2); }
-            else hurtPlayer(1, 'Cut down by the guard.');
+            if (held.block() && p.onGround) {
+              sfx('clang'); showMessage('Parried!', 1); shake = Math.max(shake, 2);
+              hitstop = Math.max(hitstop, 0.08);
+              g.thinkT += 0.4; // a parry staggers him
+            } else {
+              hurtPlayer(1, 'Cut down by the guard.');
+              p.vx = g.dir * 190; p.vy = Math.min(p.vy, -110); // knockback
+            }
           }
           g.strikeT = 0.35;
           g.thinkT = 0.9 + (Math.abs(Math.sin(g.x * 12.9)) * 0.9);
@@ -1189,6 +1220,7 @@ function pickFrame(f, isGuard){
   if (f.dead) return 'slump';
   if (f.hang) return 'hang';
   if (f.climbT > 0) return 'climb';
+  if ((f.blockT || 0) > 0) return 'block';
   const attacking = (f.attackT || 0) > 0 || (f.telegraphT || 0) > 0 || (f.strikeT || 0) > 0;
   if (attacking) {
     const raised = (f.attackT || 0) > 0.2 || (f.telegraphT || 0) > 0;
@@ -1303,22 +1335,46 @@ function frame(now){
 
   if (state === 'title') {
     drawWorld(); drawHUD();
+    const b = bestTime ? ` · Best escape: ${Math.floor(bestTime / 60)}:${String(Math.floor(bestTime % 60)).padStart(2, '0')}` : '';
     drawOverlay('Prince of the Lost Tower',
       'Escape the dungeon before the hour runs out. Find the sword — you will need it.',
-      'Press Enter to begin');
+      'Press Enter to begin' + b);
     if (edge.enter()) { state = 'play'; showMessage('Escape. You have one hour.', 4); }
   } else if (state === 'play') {
-    timeLeft -= dt;
-    if (timeLeft <= 0) { timeLeft = 0; state = 'timeup'; }
-    updateWorld(dt);
-    updatePlayer(dt);
-    updateGuard(dt);
-    // camera follows
-    const targX = Math.max(0, Math.min(player.x + player.w / 2 - VIEW_W / 2, W * TILE - VIEW_W));
-    const targY = Math.max(0, Math.min(player.y + player.h / 2 - VIEW_H / 2, H * TILE - VIEW_H));
-    camX += (targX - camX) * Math.min(dt * 8, 1);
-    camY += (targY - camY) * Math.min(dt * 6, 1);
+    if (keyEdge['KeyP'] || keyEdge['Escape']) {
+      state = 'paused';
+    } else if (hitstop > 0) {
+      hitstop -= dt; // frozen frame for impact
+    } else {
+      timeLeft -= dt;
+      if (timeLeft <= 0) { timeLeft = 0; state = 'timeup'; }
+      updateWorld(dt);
+      updatePlayer(dt);
+      updateGuard(dt);
+      // camera follows, looking ahead of the prince
+      const lookTarg = (Math.abs(player.vx) > 60 && player.onGround) ? player.dir * 70 : player.look * 0.9;
+      player.look += (lookTarg - player.look) * Math.min(dt * 2.5, 1);
+      const targX = Math.max(0, Math.min(player.x + player.w / 2 + player.look - VIEW_W / 2, W * TILE - VIEW_W));
+      const targY = Math.max(0, Math.min(player.y + player.h / 2 - VIEW_H / 2, H * TILE - VIEW_H));
+      camX += (targX - camX) * Math.min(dt * 8, 1);
+      camY += (targY - camY) * Math.min(dt * 6, 1);
+    }
     drawWorld(); drawHUD();
+    if (player.hurtT > 0.95) { // red sting on taking a hit
+      ctx.fillStyle = 'rgba(180,20,10,0.22)';
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+  } else if (state === 'paused') {
+    drawWorld(); drawHUD();
+    drawOverlay('Paused', 'The tower waits.', 'P or Esc to resume');
+    if (keyEdge['KeyP'] || keyEdge['Escape'] || edge.enter()) state = 'play';
+  } else if (state === 'dying') {
+    deathT -= dt;
+    updateWorld(dt);
+    drawWorld(); drawHUD();
+    ctx.fillStyle = `rgba(140,10,0,${0.45 * (1 - Math.max(deathT, 0) / 0.8)})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    if (deathT <= 0) state = 'dead';
   } else if (state === 'dead') {
     updateWorld(dt);
     drawWorld(); drawHUD();
@@ -1334,8 +1390,9 @@ function frame(now){
     drawWorld(); drawHUD();
     const used = TIME_LIMIT - timeLeft;
     const m = Math.floor(used / 60), s = Math.floor(used % 60);
+    const isBest = bestTime && Math.abs(used - bestTime) < 0.5;
     drawOverlay('Freedom!',
-      `The prince escapes the lost tower in ${m}:${String(s).padStart(2, '0')}.`,
+      `The prince escapes the lost tower in ${m}:${String(s).padStart(2, '0')}.` + (isBest ? ' A new best!' : ''),
       'Press Enter to play again');
     if (edge.enter() && winT > 1) { resetLevel(); state = 'title'; }
   }
