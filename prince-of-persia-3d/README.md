@@ -31,12 +31,20 @@ button sits in the top-right corner of the tower.
   canvas texture reused from the 2D game's visual language, moonlit window
   insets, and cone-shaped spikes that read far better in 3D than they ever
   could as flat triangles.
-- **Blocky low-poly characters**: the prince and guard are procedurally
-  animated humanoid rigs (box torso/head/limbs on rotating pivots), posed
-  each frame from the same state machine that drove the 2D sprite picker —
-  run cycle, jump/fall tuck, attack windup/thrust, block, ledge-hang, climb,
-  and a death slump. The guard keeps his cape and helmet plume from the 2D
-  upgrade, now as actual 3D geometry instead of a 2D overlay.
+- **Blocky low-poly characters with articulated limbs**: each arm and leg is
+  two segments (upper + lower) hinged at a knee/elbow, not a single rigid
+  box — real gaits and poses always show joint articulation, and a
+  straight-limbed rig is one of the fastest ways a 3D character reads as a
+  puppet instead of a body. The knee bends most while a leg is swinging
+  through mid-stride and straightens for stance/push-off, matching a real
+  gait's silhouette; the sword elbow cocks back on the windup and extends
+  through the thrust. Every joint eases toward its target angle each frame
+  instead of snapping, so poses blend into each other instead of popping.
+  Posed each frame from the same state machine that drove the 2D sprite
+  picker — run cycle, jump/fall tuck, attack windup/thrust, block,
+  ledge-hang, climb, and a death slump. The guard keeps his cape and helmet
+  plume from the 2D upgrade, now as actual 3D geometry instead of a 2D
+  overlay.
 - **Real lighting**: torches are point lights with animated flicker (only
   the nearest few to the camera are active at once — see Performance below),
   a warm light follows the prince, the guard's enrage phase gets a pulsing
@@ -45,9 +53,10 @@ button sits in the top-right corner of the tower.
   even far from the nearest active torch.
 - **Character detail and feel**: both rigs have eyes and a soft contact
   shadow underfoot. Landing plays a brief squash-and-stretch on the hips,
-  running adds a slight forward lean into the stride, and the attack thrust
-  carries a small forward lunge — small classic-animation touches that read
-  as far more alive than a rig holding rigid poses.
+  jump takeoff gets a complementary stretch, running adds a slight forward
+  lean into the stride plus a twice-per-stride vertical hip bob, and the
+  attack thrust carries a small forward lunge — small classic-animation
+  touches that read as far more alive than a rig holding rigid poses.
 - **Glowing particles**: dust, debris, and the sword-swing arc are
   additive-blended sprites (a soft radial glow texture) instead of flat
   spheres, always facing the camera regardless of character orientation.
