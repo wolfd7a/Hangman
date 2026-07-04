@@ -21,15 +21,21 @@ const ctx = canvas.getContext('2d');
 // ---------- input ----------
 const keys = {};
 let anyKeyPressed = false;
-addEventListener('keydown', e => {
-  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
-  if (!keys[e.code]) keyEdge[e.code] = true;
-  keys[e.code] = true;
+let keyEdge = {}; // pressed-this-frame, cleared each update
+// exposed globally so the on-screen touch controls (wired in index.html) can
+// drive the same state machine as real keyboard events
+function pressKey(code){
+  if (!keys[code]) keyEdge[code] = true;
+  keys[code] = true;
   anyKeyPressed = true;
   initAudio();
+}
+function releaseKey(code){ keys[code] = false; }
+addEventListener('keydown', e => {
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
+  pressKey(e.code);
 });
-addEventListener('keyup', e => { keys[e.code] = false; });
-let keyEdge = {}; // pressed-this-frame, cleared each update
+addEventListener('keyup', e => releaseKey(e.code));
 
 const held = {
   left:  () => keys['ArrowLeft']  || keys['KeyA'],
@@ -46,9 +52,41 @@ const edge = {
   enter:  () => keyEdge['Enter'],
 };
 
-// ---------- tiny synth sfx ----------
+// ---------- tiny synth sfx + ambience ----------
 let AC = null;
-function initAudio(){ if (!AC) { try { AC = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} } }
+let ambienceStarted = false;
+function initAudio(){
+  if (!AC) { try { AC = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+  startAmbience();
+}
+function startAmbience(){
+  if (ambienceStarted || !AC) return;
+  ambienceStarted = true;
+  try {
+    // a low, slowly breathing drone — the tower's own ambience
+    const droneGain = AC.createGain(); droneGain.gain.value = 0.05;
+    droneGain.connect(AC.destination);
+    const o1 = AC.createOscillator(); o1.type = 'sine'; o1.frequency.value = 55;
+    const o2 = AC.createOscillator(); o2.type = 'sine'; o2.frequency.value = 82.5;
+    const filt = AC.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 300;
+    o1.connect(filt); o2.connect(filt); filt.connect(droneGain);
+    o1.start(); o2.start();
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.07;
+    const lfoGain = AC.createGain(); lfoGain.gain.value = 120;
+    lfo.connect(lfoGain); lfoGain.connect(filt.frequency);
+    lfo.start();
+    // filtered noise bed — distant wind through the tower
+    const bufSize = AC.sampleRate * 2;
+    const buf = AC.createBuffer(1, bufSize, AC.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.6;
+    const noise = AC.createBufferSource(); noise.buffer = buf; noise.loop = true;
+    const noiseFilt = AC.createBiquadFilter(); noiseFilt.type = 'lowpass'; noiseFilt.frequency.value = 500;
+    const noiseGain = AC.createGain(); noiseGain.gain.value = 0.018;
+    noise.connect(noiseFilt); noiseFilt.connect(noiseGain); noiseGain.connect(AC.destination);
+    noise.start();
+  } catch (e) {}
+}
 function sfx(kind){
   if (!AC) return;
   const t = AC.currentTime;
@@ -67,6 +105,7 @@ function sfx(kind){
     lever:  [ 'square', 200, 350, 0.15, 0.06 ],
     win:    [ 'sine', 440, 880, 0.9, 0.08 ],
     die:    [ 'sawtooth', 300, 40, 0.7, 0.1 ],
+    checkpoint: [ 'sine', 700, 1250, 0.3, 0.05 ],
   }[kind];
   if (!P) return;
   o.type = P[0];
@@ -80,7 +119,7 @@ function sfx(kind){
 // ---------- level ----------
 const W = 96, H = 24;
 let grid, gates, plates, chompers, looseTiles, potions, lever, door, sword,
-    checkpoints, guard, player, particles, fallingTiles, torches;
+    checkpoints, guard, player, particles, fallingTiles, torches, slashes;
 let camX = 0, camY = 0, shake = 0;
 let timeLeft, message, messageT, state, winT, deathT = 0, hitstop = 0;
 let bestTime = null;
@@ -135,14 +174,14 @@ function resetLevel(){
   grid = makeGrid();
   gates = {}; plates = []; chompers = []; looseTiles = {}; potions = [];
   lever = null; door = { cells: [], open: false, anim: 0 };
-  sword = null; checkpoints = []; particles = []; fallingTiles = []; torches = [];
+  sword = null; checkpoints = []; particles = []; fallingTiles = []; torches = []; slashes = [];
   let start = { x: 2, y: 6 };
   let guardPos = null;
 
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const c = grid[y][x];
     if (c === 'S') { start = { x, y }; grid[y][x] = ' '; }
-    else if (c === 'M') { checkpoints.push({ x, y }); grid[y][x] = ' '; }
+    else if (c === 'M') { checkpoints.push({ x, y, reached: false }); grid[y][x] = ' '; }
     else if (c === 'g') { guardPos = { x, y }; grid[y][x] = ' '; }
     else if (c === 'c') { chompers.push({ x, y, offset: (x * 0.37) % 1 }); grid[y][x] = ' '; }
     else if (c === 'p') { potions.push({ x, y, big: false, taken: false }); grid[y][x] = ' '; }
@@ -327,6 +366,7 @@ function updatePlayer(dt){
   if (edge.attack() && p.hasSword && p.onGround && p.attackT <= 0) {
     p.attackT = 0.38;
     sfx('sword');
+    slashes.push({ x: p.x + p.w / 2 + p.dir * 15, y: p.y + p.h - 30, dir: p.dir, t: 0.18 });
     if (guard && !guard.dead) {
       const gx = guard.x + guard.w / 2, px = p.x + p.w / 2;
       const sameFloor = Math.abs((guard.y + guard.h) - (p.y + p.h)) < 20;
@@ -428,6 +468,14 @@ function updatePlayer(dt){
     if (Math.abs(cp.x - ptx) <= 0 && Math.abs(cp.y - pty) <= 1 && (p.checkpoint.x !== cp.x || p.checkpoint.y !== cp.y)) {
       p.checkpoint = { x: cp.x, y: cp.y };
       showMessage('The way is remembered. (checkpoint)', 2.5);
+      if (!cp.reached) {
+        cp.reached = true;
+        sfx('checkpoint');
+        const bx = cp.x * TILE + TILE / 2, by = (cp.y + 1) * TILE - 10;
+        for (let d = 0; d < 10; d++) particles.push({
+          x: bx, y: by, vx: (Math.random() - 0.5) * 90, vy: -80 - Math.random() * 60, life: 0.7, c: '#ffdb8a'
+        });
+      }
     }
   }
   // exit door
@@ -498,6 +546,7 @@ function updateGuard(dt){
         g.telegraphT -= dt;
         if (g.telegraphT <= 0) {
           // strike lands now
+          slashes.push({ x: g.x + g.w / 2 + g.dir * 15, y: g.y + g.h - 30, dir: g.dir, t: 0.18 });
           if (dist < TILE * 1.7 && sameFloor) {
             if (held.block() && p.onGround) {
               sfx('clang'); showMessage('Parried!', 1); shake = Math.max(shake, 2);
@@ -591,6 +640,11 @@ function updateWorld(dt){
     pt.vy += GRAV * 0.5 * dt;
     pt.x += pt.vx * dt; pt.y += pt.vy * dt;
     if (pt.life <= 0) particles.splice(i, 1);
+  }
+  // slash fx
+  for (let i = slashes.length - 1; i >= 0; i--) {
+    slashes[i].t -= dt;
+    if (slashes[i].t <= 0) slashes.splice(i, 1);
   }
   if (shake > 0) shake = Math.max(0, shake - dt * 18);
   if (messageT > 0) { messageT -= dt; if (messageT <= 0) message = ''; }
@@ -734,6 +788,7 @@ function drawLighting(sx, sy){
   for (const pot of potions) if (!pot.taken) punchLight(pot.x * TILE + 16 - sx, pot.y * TILE + 22 - sy, 46, 0.5);
   if (sword && !sword.taken) punchLight(sword.x * TILE + 16 - sx, sword.y * TILE + 16 - sy, 58, 0.6);
   if (door.open && door.cells.length) punchLight(door.cells[0].x * TILE + 16 - sx, door.cells[0].y * TILE + 32 - sy, 115, 0.85);
+  for (const cp of checkpoints) if (cp.reached) punchLight(cp.x * TILE + 16 - sx, (cp.y + 1) * TILE - 14 - sy, 55, 0.4);
   punchLight(player.x + player.w / 2 - sx, player.y + player.h / 2 - sy, 95, 0.55);
   if (guard && !guard.dead) punchLight(guard.x + guard.w / 2 - sx, guard.y + guard.h / 2 - sy, 60, 0.35);
   ctx.drawImage(lightCanvas, sx, sy);
@@ -749,6 +804,22 @@ function drawMotes(sx, sy){
     ctx.fillRect(sx + mx, sy + my, i % 3 === 0 ? 2 : 1.5, i % 3 === 0 ? 2 : 1.5);
   }
   ctx.globalAlpha = 1;
+}
+
+function drawSlashes(){
+  for (const s of slashes) {
+    const a = Math.max(s.t / 0.18, 0);
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.scale(s.dir || 1, 1);
+    ctx.strokeStyle = `rgba(235,240,255,${0.7 * a})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(-4, 0, 20, -0.95, 0.95); ctx.stroke();
+    ctx.strokeStyle = `rgba(180,200,255,${0.3 * a})`;
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(-4, 0, 20, -0.7, 0.7); ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function drawWorld(){
@@ -810,6 +881,29 @@ function drawWorld(){
     ctx.fillRect(bx - 2, by - (pot.big ? 22 : 19) + bob, 4, 6);
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.beginPath(); ctx.ellipse(bx - 2, by - 10 + bob, 2, 3, 0, 0, 7); ctx.fill();
+  }
+  // checkpoint sigils — dim until reached, then a warm gold glow
+  for (const cp of checkpoints) {
+    const bx = cp.x * TILE + TILE / 2, by = (cp.y + 1) * TILE - 14;
+    const bob = Math.sin(tNow * 2 + cp.x) * 3;
+    const lit = cp.reached;
+    if (lit) {
+      const gr = ctx.createRadialGradient(bx, by + bob, 2, bx, by + bob, 26);
+      gr.addColorStop(0, 'rgba(255,215,120,0.35)');
+      gr.addColorStop(1, 'rgba(255,215,120,0)');
+      ctx.fillStyle = gr;
+      ctx.fillRect(bx - 26, by + bob - 26, 52, 52);
+    }
+    ctx.save();
+    ctx.translate(bx, by + bob);
+    ctx.rotate(Math.PI / 4);
+    const size = lit ? 6.5 : 5;
+    ctx.fillStyle = lit ? 'rgba(255,221,140,0.95)' : 'rgba(110,130,160,0.5)';
+    ctx.fillRect(-size, -size, size * 2, size * 2);
+    ctx.strokeStyle = lit ? 'rgba(255,240,200,0.9)' : 'rgba(160,175,195,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-size, -size, size * 2, size * 2);
+    ctx.restore();
   }
   if (sword && !sword.taken) {
     const bx = sword.x * TILE + TILE / 2, by = (sword.y + 1) * TILE - 4;
@@ -981,6 +1075,7 @@ function drawWorld(){
 
   if (guard && !(guard.dead && guard.deadFaded)) drawFigure(guard, true);
   drawFigure(player, false);
+  drawSlashes();
 
   // atmosphere: dynamic lighting, dust motes, vignette
   drawLighting(sx, sy);

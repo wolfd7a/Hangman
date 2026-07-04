@@ -5,7 +5,7 @@ one full dungeon level across three floors. No build step, no dependencies.
 
 ## Play
 
-Open `index.html` in any modern browser. That's it.
+Open `index.html` in any modern browser — desktop or mobile. That's it.
 
 ## Controls
 
@@ -20,9 +20,14 @@ Open `index.html` in any modern browser. That's it.
 | P / Esc | Pause |
 | Enter | Start / respawn / restart |
 
+On a touch device, an on-screen D-pad and action buttons appear automatically
+(walk/attack/parry/jump), and tapping the tower advances the title, death, and
+win screens in place of Enter.
+
 Jumps are forgiving: a short **coyote window** after running off a ledge, a
 **buffered** jump if you press slightly before landing, and **variable height**
 (release early for a hop). Your best escape time is remembered between visits.
+Checkpoints are marked by a rune sigil that lights up gold once you reach it.
 
 ## The level
 
@@ -46,8 +51,13 @@ loose-tile debris, a patrol/duel guard AI, camera with screen-shake, and
 torch-lit dungeon rendering with a real-time lighting pass (flickering torch
 pools punched out of a darkness layer), a level pre-baked to an offscreen
 canvas with edge-aware brickwork, moonlit barred windows with light shafts,
-drifting dust motes, contact shadows, and a vignette. Characters are hand-authored 16×24 pixel-art
-sprite sheets (idle, 4-frame run cycle, jump, fall, hang, climb, sword poses)
-baked to offscreen canvases with palette swaps for the prince and the guard —
-no external assets, everything is drawn in code. Open `index.html#sprites` to
-view the sprite sheet.
+drifting dust motes, contact shadows, sword-swing arcs, and a vignette.
+Characters are hand-authored 16×24 pixel-art sprite sheets (idle, 4-frame run
+cycle, jump, fall, hang, climb, sword poses) baked to offscreen canvases with
+palette swaps for the prince and the guard — no external assets, everything
+is drawn in code. Open `index.html#sprites` to view the sprite sheet.
+
+A procedural WebAudio ambience (a low drone plus filtered wind noise) plays
+underneath the synth sound effects. Touch input reuses the same key-state
+machine as the keyboard, so on-screen buttons and physical keys are
+interchangeable.
