@@ -39,8 +39,18 @@ button sits in the top-right corner of the tower.
   upgrade, now as actual 3D geometry instead of a 2D overlay.
 - **Real lighting**: torches are point lights with animated flicker (only
   the nearest few to the camera are active at once — see Performance below),
-  a warm light follows the prince, and the guard's enrage phase gets a
-  pulsing red light instead of a 2D canvas gradient.
+  a warm light follows the prince, the guard's enrage phase gets a pulsing
+  red light instead of a 2D canvas gradient, and a cheap always-on
+  directional key light gives every surface consistent directional shading
+  even far from the nearest active torch.
+- **Character detail and feel**: both rigs have eyes and a soft contact
+  shadow underfoot. Landing plays a brief squash-and-stretch on the hips,
+  running adds a slight forward lean into the stride, and the attack thrust
+  carries a small forward lunge — small classic-animation touches that read
+  as far more alive than a rig holding rigid poses.
+- **Glowing particles**: dust, debris, and the sword-swing arc are
+  additive-blended sprites (a soft radial glow texture) instead of flat
+  spheres, always facing the camera regardless of character orientation.
 - **HUD stays 2D**: hearts, timer, messages, the mute button, and all
   overlay screens (title, pause, death, win) are drawn on a transparent 2D
   canvas layered on top of the WebGL canvas, ported near-verbatim from the
