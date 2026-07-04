@@ -630,10 +630,16 @@ scene.background = new THREE.Color(0x05040a);
 scene.fog = new THREE.Fog(0x05040a, 8, 26);
 const camera = new THREE.PerspectiveCamera(52, VIEW_W / VIEW_H, 0.1, 60);
 
-const hemi = new THREE.HemisphereLight(0x3a4a70, 0x1a1208, 2.4);
+const hemi = new THREE.HemisphereLight(0x3a4a70, 0x1a1208, 2.8);
 scene.add(hemi);
-const ambient = new THREE.AmbientLight(0x40485c, 1.4);
+const ambient = new THREE.AmbientLight(0x454c60, 1.7);
 scene.add(ambient);
+// a directional light has no distance falloff, so it's essentially free no matter how
+// many torches are in the level — gives every surface consistent directional shading
+// (real form, not just flat fill) even far from the nearest active torch
+const keyLight = new THREE.DirectionalLight(0x8fa0c8, 1.15);
+keyLight.position.set(-4, 8, 5);
+scene.add(keyLight);
 const playerLight = new THREE.PointLight(0xffcf9a, 18, 6, 2);
 scene.add(playerLight);
 
@@ -916,6 +922,13 @@ function buildRig(isGuard){
   head.position.y = torsoLen + 0.13;
   hips.add(head);
 
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x18100a });
+  for (const ex of [-0.05, 0.05]) {
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.02), eyeMat);
+    eye.position.set(ex, torsoLen + 0.14, 0.115);
+    hips.add(eye);
+  }
+
   if (isGuard) {
     const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.25),
       new THREE.MeshStandardMaterial({ color: palette.helmet, roughness: 0.5, metalness: 0.4 }));
@@ -979,8 +992,15 @@ function buildRig(isGuard){
     root.add(enrageLight);
   }
 
-  root.userData = { hips, torso, head, legL, legR, armL, armR, swordGroup,
-                     capeGroup, enrageLight, isGuard, legLen, armLen, torsoLen };
+  const shadowMesh = new THREE.Mesh(new THREE.CircleGeometry(0.22, 12),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
+  shadowMesh.rotation.x = -Math.PI / 2;
+  shadowMesh.position.y = 0.015;
+  root.add(shadowMesh);
+
+  root.userData = { hips, torso, head, legL, legR, armL, armR, swordGroup, shadowMesh,
+                     capeGroup, enrageLight, isGuard, legLen, armLen, torsoLen,
+                     wasOnGround: false, landedAt: -99 };
   return root;
 }
 
@@ -998,6 +1018,13 @@ function poseRig(rig, f, isGuard){
 
   d.swordGroup.visible = (isGuard || f.hasSword) && !dead && !hanging;
   if (d.enrageLight) d.enrageLight.intensity = (f.enraged && !dead) ? (6 + Math.sin(tNow * 7) * 3) : 0;
+  d.shadowMesh.visible = f.onGround || dead;
+
+  // landing squash-and-stretch: detect the ground-transition edge and ease out over 0.15s
+  if (f.onGround && !d.wasOnGround) d.landedAt = tNow;
+  d.wasOnGround = f.onGround;
+  const squash = f.onGround ? Math.max(0, 1 - (tNow - d.landedAt) / 0.15) : 0;
+  d.hips.scale.set(1 + squash * 0.16, 1 - squash * 0.22, 1 + squash * 0.16);
 
   if (dead) {
     rig.rotation.z = 1.5;
@@ -1005,24 +1032,29 @@ function poseRig(rig, f, isGuard){
     d.armL.rotation.x = 0.3; d.armR.rotation.x = 0.3;
     return;
   }
-  rig.rotation.z = 0;
 
   if (hanging) {
+    rig.rotation.z = 0;
     d.armL.rotation.x = -2.6; d.armR.rotation.x = -2.6;
     d.legL.rotation.x = 0.3; d.legR.rotation.x = -0.2;
   } else if (climbing) {
+    rig.rotation.z = 0;
     d.armL.rotation.x = -2.2; d.armR.rotation.x = -1.6;
     d.legL.rotation.x = -1.2; d.legR.rotation.x = 0.6;
   } else if (attacking) {
+    rig.rotation.z = 0;
     const raised = (f.attackT || 0) > 0.2 || (f.telegraphT || 0) > 0;
     d.armR.rotation.x = raised ? -2.3 : -1.1;
     d.armL.rotation.x = -0.3;
     d.legL.rotation.x = 0.15; d.legR.rotation.x = -0.15;
+    if (!raised) rig.position.x += dir * 0.12; // a small forward lunge on the thrust
   } else if (blocking) {
+    rig.rotation.z = 0;
     d.armR.rotation.x = -1.7;
     d.armL.rotation.x = -0.9;
     d.legL.rotation.x = 0; d.legR.rotation.x = 0;
   } else if (!f.onGround) {
+    rig.rotation.z = 0;
     d.armL.rotation.x = -0.6; d.armR.rotation.x = -0.5;
     d.legL.rotation.x = f.vy < 0 ? -0.5 : 0.4;
     d.legR.rotation.x = f.vy < 0 ? 0.4 : -0.3;
@@ -1032,11 +1064,13 @@ function poseRig(rig, f, isGuard){
     d.legR.rotation.x = Math.sin(ph + Math.PI) * 0.9;
     d.armL.rotation.x = Math.sin(ph + Math.PI) * 0.6;
     d.armR.rotation.x = (f.hasSword || isGuard) ? -0.3 : Math.sin(ph) * 0.6;
+    rig.rotation.z = -dir * 0.1; // lean into the run
   } else {
     const bob = Math.sin(tNow * 2.2) * 0.02;
     d.hips.position.y = d.legLen + bob;
     d.legL.rotation.x = 0; d.legR.rotation.x = 0;
     d.armL.rotation.x = 0.05; d.armR.rotation.x = (f.hasSword || isGuard) ? -0.2 : 0.05;
+    rig.rotation.z = 0;
   }
   if (d.capeGroup) {
     const sway = Math.sin(tNow * 2.6 + (f.homeX || 0) * 0.05) * 0.25 - (f.vx || 0) * 0.0015;
@@ -1114,13 +1148,27 @@ function syncPool(list, map, createFn, updateFn){
     if (!alive.has(obj)) { levelGroup.remove(mesh); map.delete(obj); }
   }
 }
-function createParticleMesh(pt){
-  return new THREE.Mesh(new THREE.SphereGeometry(1, 6, 5), new THREE.MeshBasicMaterial({ color: pt.c || 0xffffff, transparent: true }));
+function makeGlowTexture(){
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.7)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
 }
-function updateParticleMesh(mesh, pt){
-  mesh.position.set(wx(pt.x), wy(pt.y), ACTOR_Z);
-  mesh.scale.setScalar((pt.r || 2.2) / PXU);
-  mesh.material.opacity = Math.max(pt.life / (pt.maxLife || 0.6), 0);
+const glowTex = makeGlowTexture();
+function createParticleMesh(pt){
+  return new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: pt.c || 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+}
+function updateParticleMesh(sprite, pt){
+  sprite.position.set(wx(pt.x), wy(pt.y), ACTOR_Z);
+  const r = ((pt.r || 2.2) / PXU) * 2.4;
+  sprite.scale.set(r, r, 1);
+  sprite.material.opacity = Math.max(pt.life / (pt.maxLife || 0.6), 0);
 }
 function createFallingMesh(){
   return new THREE.Mesh(new THREE.BoxGeometry(1, 1, FLOOR_FRONT_Z - WALL_Z), MAT.loose);
@@ -1143,7 +1191,7 @@ function syncDynamics(){
   // only the torches nearest the camera cast real light — with ~20 torches in the
   // level, lighting every fragment against all of them at once tanks framerate for
   // no visible benefit (far torches are indistinguishable from unlit at that range)
-  const MAX_ACTIVE_TORCH_LIGHTS = 4;
+  const MAX_ACTIVE_TORCH_LIGHTS = 6;
   const byDist = dynamic.torches
     .map(t => ({ t, d: (t.light.position.x - camWX) ** 2 + (t.light.position.y - camWY) ** 2 }))
     .sort((a, b) => a.d - b.d);
