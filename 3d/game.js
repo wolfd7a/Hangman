@@ -943,28 +943,38 @@ function buildRig(isGuard){
     hips.add(hair);
   }
 
-  function makeLimb(len, mat, z, thick){
-    const pivot = new THREE.Group();
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(thick, len, thick), mat);
-    mesh.position.y = -len / 2;
-    pivot.add(mesh);
-    pivot.position.z = z;
-    return pivot;
+  // two-segment limbs (upper + lower, hinged at a knee/elbow) instead of a single
+  // rigid box — the single biggest fix for the puppet-like look a straight-limb
+  // rig has, since real gaits and poses always show joint articulation
+  function makeTwoSegmentLimb(totalLen, mat, z, thick){
+    const upperLen = totalLen * 0.54, lowerLen = totalLen * 0.46;
+    const hip = new THREE.Group();
+    hip.position.z = z;
+    const upperMesh = new THREE.Mesh(new THREE.BoxGeometry(thick, upperLen, thick), mat);
+    upperMesh.position.y = -upperLen / 2;
+    hip.add(upperMesh);
+    const knee = new THREE.Group();
+    knee.position.y = -upperLen;
+    hip.add(knee);
+    const lowerMesh = new THREE.Mesh(new THREE.BoxGeometry(thick * 0.85, lowerLen, thick * 0.85), mat);
+    lowerMesh.position.y = -lowerLen / 2;
+    knee.add(lowerMesh);
+    return { hip, knee, upperLen, lowerLen };
   }
 
-  const legL = makeLimb(legLen, matCloth, 0.08, 0.13); hips.add(legL);
-  const legR = makeLimb(legLen, matCloth, -0.08, 0.13); hips.add(legR);
+  const legL = makeTwoSegmentLimb(legLen, matCloth, 0.08, 0.13); hips.add(legL.hip);
+  const legR = makeTwoSegmentLimb(legLen, matCloth, -0.08, 0.13); hips.add(legR.hip);
   const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.09, 0.18), matDark);
-  bootL.position.y = -legLen + 0.045; legL.add(bootL);
+  bootL.position.y = -legL.lowerLen + 0.045; legL.knee.add(bootL);
   const bootR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.09, 0.18), matDark);
-  bootR.position.y = -legLen + 0.045; legR.add(bootR);
+  bootR.position.y = -legR.lowerLen + 0.045; legR.knee.add(bootR);
 
-  const armL = makeLimb(armLen, matCloth, 0.14, 0.1); armL.position.y = torsoLen; hips.add(armL);
-  const armR = makeLimb(armLen, matCloth, -0.14, 0.1); armR.position.y = torsoLen; hips.add(armR);
+  const armL = makeTwoSegmentLimb(armLen, matCloth, 0.14, 0.1); armL.hip.position.y = torsoLen; hips.add(armL.hip);
+  const armR = makeTwoSegmentLimb(armLen, matCloth, -0.14, 0.1); armR.hip.position.y = torsoLen; hips.add(armR.hip);
   const handL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.1), matSkin);
-  handL.position.y = -armLen; armL.add(handL);
+  handL.position.y = -armL.lowerLen; armL.knee.add(handL);
   const handR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.1), matSkin);
-  handR.position.y = -armLen; armR.add(handR);
+  handR.position.y = -armR.lowerLen; armR.knee.add(handR);
 
   const swordGroup = new THREE.Group();
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.02), MAT.bladeMetal);
@@ -973,9 +983,9 @@ function buildRig(isGuard){
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.05), MAT.hilt);
   grip.position.y = -0.08;
   swordGroup.add(blade, guardBar, grip);
-  swordGroup.position.y = -armLen;
+  swordGroup.position.y = -armR.lowerLen;
   swordGroup.rotation.z = -0.3;
-  armR.add(swordGroup);
+  armR.knee.add(swordGroup);
 
   let capeGroup = null;
   let enrageLight = null;
@@ -1000,11 +1010,17 @@ function buildRig(isGuard){
 
   root.userData = { hips, torso, head, legL, legR, armL, armR, swordGroup, shadowMesh,
                      capeGroup, enrageLight, isGuard, legLen, armLen, torsoLen,
-                     wasOnGround: false, landedAt: -99 };
+                     wasOnGround: false, landedAt: -99, jumpedAt: -99 };
   return root;
 }
 
-function poseRig(rig, f, isGuard){
+// eases a joint's current rotation toward a target angle instead of snapping to it —
+// removes the pop between poses that a hard-set rig always has
+function ease(joint, target, dt, rate){
+  joint.rotation.x += (target - joint.rotation.x) * Math.min(dt * rate, 1);
+}
+
+function poseRig(rig, f, isGuard, dt){
   const d = rig.userData;
   const dir = f.dir || 1;
   rig.scale.x = dir;
@@ -1020,58 +1036,80 @@ function poseRig(rig, f, isGuard){
   if (d.enrageLight) d.enrageLight.intensity = (f.enraged && !dead) ? (6 + Math.sin(tNow * 7) * 3) : 0;
   d.shadowMesh.visible = f.onGround || dead;
 
-  // landing squash-and-stretch: detect the ground-transition edge and ease out over 0.15s
+  // landing squash and jump-takeoff stretch: detect the ground-transition edges and
+  // ease each out over a fraction of a second — classic anticipation/impact cues
   if (f.onGround && !d.wasOnGround) d.landedAt = tNow;
+  if (!f.onGround && d.wasOnGround && f.vy < -200) d.jumpedAt = tNow;
   d.wasOnGround = f.onGround;
   const squash = f.onGround ? Math.max(0, 1 - (tNow - d.landedAt) / 0.15) : 0;
-  d.hips.scale.set(1 + squash * 0.16, 1 - squash * 0.22, 1 + squash * 0.16);
+  const stretch = Math.max(0, 1 - (tNow - d.jumpedAt) / 0.12);
+  const net = squash - stretch;
+  d.hips.scale.set(1 + net * 0.16, 1 - net * 0.22, 1 + net * 0.16);
 
   if (dead) {
     rig.rotation.z = 1.5;
-    d.legL.rotation.x = 0; d.legR.rotation.x = 0;
-    d.armL.rotation.x = 0.3; d.armR.rotation.x = 0.3;
+    d.legL.hip.rotation.x = 0; d.legL.knee.rotation.x = 0.2;
+    d.legR.hip.rotation.x = 0; d.legR.knee.rotation.x = 0.2;
+    d.armL.hip.rotation.x = 0.3; d.armL.knee.rotation.x = 0.3;
+    d.armR.hip.rotation.x = 0.3; d.armR.knee.rotation.x = 0.3;
     return;
   }
 
+  let legLHip = 0, legLKnee = 0.15, legRHip = 0, legRKnee = 0.15;
+  let armLHip = 0, armLKnee = 0.25, armRHip = 0, armRKnee = 0.25;
+  let targetLean = 0, hipBob = 0;
+
   if (hanging) {
-    rig.rotation.z = 0;
-    d.armL.rotation.x = -2.6; d.armR.rotation.x = -2.6;
-    d.legL.rotation.x = 0.3; d.legR.rotation.x = -0.2;
+    armLHip = -2.6; armLKnee = 0.25; armRHip = -2.6; armRKnee = 0.25;
+    legLHip = 0.3; legLKnee = 0.5; legRHip = -0.2; legRKnee = 0.3;
   } else if (climbing) {
-    rig.rotation.z = 0;
-    d.armL.rotation.x = -2.2; d.armR.rotation.x = -1.6;
-    d.legL.rotation.x = -1.2; d.legR.rotation.x = 0.6;
+    armLHip = -2.0; armLKnee = 1.1; armRHip = -1.4; armRKnee = 1.3;
+    legLHip = -1.2; legLKnee = 1.0; legRHip = 0.6; legRKnee = 0.3;
   } else if (attacking) {
-    rig.rotation.z = 0;
     const raised = (f.attackT || 0) > 0.2 || (f.telegraphT || 0) > 0;
-    d.armR.rotation.x = raised ? -2.3 : -1.1;
-    d.armL.rotation.x = -0.3;
-    d.legL.rotation.x = 0.15; d.legR.rotation.x = -0.15;
+    armRHip = raised ? -2.1 : -1.0;
+    armRKnee = raised ? 1.7 : 0.25; // cocked back with a bent elbow, then extends through the thrust
+    armLHip = -0.3; armLKnee = 0.6;
+    legLHip = 0.15; legLKnee = 0.3; legRHip = -0.15; legRKnee = 0.3;
     if (!raised) rig.position.x += dir * 0.12; // a small forward lunge on the thrust
   } else if (blocking) {
-    rig.rotation.z = 0;
-    d.armR.rotation.x = -1.7;
-    d.armL.rotation.x = -0.9;
-    d.legL.rotation.x = 0; d.legR.rotation.x = 0;
+    armRHip = -1.6; armRKnee = 1.0;
+    armLHip = -0.9; armLKnee = 0.7;
+    legLHip = 0; legRHip = 0;
   } else if (!f.onGround) {
-    rig.rotation.z = 0;
-    d.armL.rotation.x = -0.6; d.armR.rotation.x = -0.5;
-    d.legL.rotation.x = f.vy < 0 ? -0.5 : 0.4;
-    d.legR.rotation.x = f.vy < 0 ? 0.4 : -0.3;
+    armLHip = -0.6; armLKnee = 0.7; armRHip = -0.5; armRKnee = 0.7;
+    // legs tuck under on the way up, extend for landing on the way down
+    legLHip = f.vy < 0 ? -0.5 : 0.35;
+    legRHip = f.vy < 0 ? 0.4 : -0.25;
+    legLKnee = f.vy < 0 ? 1.3 : 0.3;
+    legRKnee = f.vy < 0 ? 1.2 : 0.3;
   } else if (Math.abs(f.vx) > 20) {
     const ph = f.runPhase || 0;
-    d.legL.rotation.x = Math.sin(ph) * 0.9;
-    d.legR.rotation.x = Math.sin(ph + Math.PI) * 0.9;
-    d.armL.rotation.x = Math.sin(ph + Math.PI) * 0.6;
-    d.armR.rotation.x = (f.hasSword || isGuard) ? -0.3 : Math.sin(ph) * 0.6;
-    rig.rotation.z = -dir * 0.1; // lean into the run
+    legLHip = Math.sin(ph) * 0.9;
+    legRHip = Math.sin(ph + Math.PI) * 0.9;
+    // knee bends most while the leg is swinging through (foot lifting and clearing
+    // the ground), and straightens for the stance/push-off half of the stride
+    legLKnee = 0.15 + Math.max(0, Math.sin(ph + 0.5)) * 1.15;
+    legRKnee = 0.15 + Math.max(0, Math.sin(ph + Math.PI + 0.5)) * 1.15;
+    armLHip = Math.sin(ph + Math.PI) * 0.6;
+    armRHip = (f.hasSword || isGuard) ? -0.3 : Math.sin(ph) * 0.6;
+    armLKnee = 0.3 + Math.max(0, Math.sin(ph + Math.PI)) * 0.5;
+    armRKnee = (f.hasSword || isGuard) ? 0.5 : 0.3 + Math.max(0, Math.sin(ph)) * 0.5;
+    targetLean = -dir * 0.1; // lean into the run
+    hipBob = Math.abs(Math.sin(ph)) * 0.045; // bounces twice per stride, like a real gait
   } else {
     const bob = Math.sin(tNow * 2.2) * 0.02;
-    d.hips.position.y = d.legLen + bob;
-    d.legL.rotation.x = 0; d.legR.rotation.x = 0;
-    d.armL.rotation.x = 0.05; d.armR.rotation.x = (f.hasSword || isGuard) ? -0.2 : 0.05;
-    rig.rotation.z = 0;
+    hipBob = bob;
+    armLHip = 0.05; armRHip = (f.hasSword || isGuard) ? -0.2 : 0.05;
   }
+
+  ease(d.legL.hip, legLHip, dt, 16); ease(d.legL.knee, legLKnee, dt, 16);
+  ease(d.legR.hip, legRHip, dt, 16); ease(d.legR.knee, legRKnee, dt, 16);
+  ease(d.armL.hip, armLHip, dt, 16); ease(d.armL.knee, armLKnee, dt, 16);
+  ease(d.armR.hip, armRHip, dt, attacking ? 26 : 16); ease(d.armR.knee, armRKnee, dt, attacking ? 26 : 16);
+  rig.rotation.z += (targetLean - rig.rotation.z) * Math.min(dt * 10, 1);
+  d.hips.position.y += (d.legLen + hipBob - d.hips.position.y) * Math.min(dt * 16, 1);
+
   if (d.capeGroup) {
     const sway = Math.sin(tNow * 2.6 + (f.homeX || 0) * 0.05) * 0.25 - (f.vx || 0) * 0.0015;
     d.capeGroup.rotation.x = 0.15 + sway;
@@ -1187,7 +1225,7 @@ function updateSlashMesh(mesh, s){
 }
 
 // ---------- per-frame dynamic object sync ----------
-function syncDynamics(){
+function syncDynamics(dt){
   // only the torches nearest the camera cast real light — with ~20 torches in the
   // level, lighting every fragment against all of them at once tanks framerate for
   // no visible benefit (far torches are indistinguishable from unlit at that range)
@@ -1244,10 +1282,10 @@ function syncDynamics(){
   syncPool(fallingTiles, poolMaps.falling, createFallingMesh, updateFallingMesh);
   syncPool(slashes, poolMaps.slashes, createSlashMesh, updateSlashMesh);
 
-  poseRig(princeRig, player, false);
+  poseRig(princeRig, player, false, dt);
   playerLight.position.set(wx(player.x + player.w / 2), wy(player.y + player.h / 2), ACTOR_Z + 0.6);
   playerLight.intensity = 18 + Math.sin(tNow * 5) * 1.5;
-  if (guard) poseRig(guardRig, guard, true);
+  if (guard) poseRig(guardRig, guard, true, dt);
 }
 
 // ---------- camera ----------
@@ -1426,7 +1464,7 @@ function frame(now){
   hctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
   if (state === 'title') {
-    updateCamera(dt); syncDynamics();
+    updateCamera(dt); syncDynamics(dt);
     const b = bestTime ? ` · Best escape: ${Math.floor(bestTime / 60)}:${String(Math.floor(bestTime % 60)).padStart(2, '0')}` : '';
     drawHUD();
     drawOverlay('Prince of the Lost Tower — 3D',
@@ -1446,40 +1484,40 @@ function frame(now){
       updatePlayer(dt);
       updateGuard(dt);
     }
-    updateCamera(dt); syncDynamics();
+    updateCamera(dt); syncDynamics(dt);
     drawHUD();
     if (player.hurtT > 0.95) {
       hctx.fillStyle = 'rgba(180,20,10,0.22)';
       hctx.fillRect(0, 0, VIEW_W, VIEW_H);
     }
   } else if (state === 'paused') {
-    updateCamera(dt); syncDynamics();
+    updateCamera(dt); syncDynamics(dt);
     drawHUD();
     drawOverlay('Paused', 'The tower waits.', 'P or Esc to resume');
     if (keyEdge['KeyP'] || keyEdge['Escape'] || edge.enter()) state = 'play';
   } else if (state === 'dying') {
     deathT -= dt;
     updateWorld(dt);
-    updateCamera(dt); syncDynamics();
+    updateCamera(dt); syncDynamics(dt);
     drawHUD();
     hctx.fillStyle = `rgba(140,10,0,${0.45 * (1 - Math.max(deathT, 0) / 0.8)})`;
     hctx.fillRect(0, 0, VIEW_W, VIEW_H);
     if (deathT <= 0) state = 'dead';
   } else if (state === 'dead') {
     updateWorld(dt);
-    updateCamera(dt); syncDynamics();
+    updateCamera(dt); syncDynamics(dt);
     drawHUD();
     drawOverlay('You Have Died', player.deathMsg, 'Press Enter to rise again');
     if (edge.enter()) respawn();
   } else if (state === 'timeup') {
-    updateCamera(dt); syncDynamics();
+    updateCamera(dt); syncDynamics(dt);
     drawHUD();
     drawOverlay('The Hour Has Passed', 'The princess is lost. The tower keeps its secrets.', 'Press Enter to try once more');
     if (edge.enter()) { resetLevel(); state = 'play'; }
   } else if (state === 'win') {
     winT += dt;
     updateWorld(dt);
-    updateCamera(dt); syncDynamics();
+    updateCamera(dt); syncDynamics(dt);
     drawHUD();
     const used = TIME_LIMIT - timeLeft;
     const m = Math.floor(used / 60), s = Math.floor(used % 60);
