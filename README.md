@@ -22,7 +22,8 @@ Open `index.html` in any modern browser — desktop or mobile. That's it.
 
 On a touch device, an on-screen D-pad and action buttons appear automatically
 (walk/attack/parry/jump), and tapping the tower advances the title, death, and
-win screens in place of Enter.
+win screens in place of Enter. A speaker icon in the top-right corner of the
+tower mutes all sound and remembers your preference between visits.
 
 Jumps are forgiving: a short **coyote window** after running off a ledge, a
 **buffered** jump if you press slightly before landing, and **variable height**
@@ -34,9 +35,10 @@ Checkpoints are marked by a rune sigil that lights up gold once you reach it.
 - **Top floor** — running-jump gap, cracked *loose tiles* (cross fast, or fall
   through as a painful shortcut), a chomper gate, and a pressure-plate gate.
 - **Middle floor** — backtrack left to find **the sword**. A spike bed, a
-  checkpoint, a sword **guard** to duel (attack with X, parry with Z), and a
-  second plate-gate. A running jump over the descent gap hides a **great potion**
-  (+1 max health).
+  checkpoint, a sword **guard** to duel (attack with X, parry with Z — he
+  blocks and fights back, and **enrages** into a faster, more aggressive phase
+  once he's down to his last hit), and a second plate-gate. A running jump
+  over the descent gap hides a **great potion** (+1 max health).
 - **Bottom floor** — travel *left* through twin chompers and a spike gauntlet,
   pull the lever to raise the exit door, and escape.
 
@@ -58,6 +60,8 @@ palette swaps for the prince and the guard — no external assets, everything
 is drawn in code. Open `index.html#sprites` to view the sprite sheet.
 
 A procedural WebAudio ambience (a low drone plus filtered wind noise) plays
-underneath the synth sound effects. Touch input reuses the same key-state
-machine as the keyboard, so on-screen buttons and physical keys are
-interchangeable.
+underneath the synth sound effects, all routed through a single mutable
+master gain. Touch input reuses the same key-state machine as the keyboard,
+so on-screen buttons and physical keys are interchangeable. Movement kicks up
+dust particles on running and landing, and every sword swing — prince or
+guard — leaves a brief motion-arc trail.

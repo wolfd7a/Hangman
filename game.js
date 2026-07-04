@@ -18,6 +18,20 @@ const TIME_LIMIT = 60 * 60; // seconds, like the original
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+// mute button lives in the top-right corner of the canvas at all times
+canvas.addEventListener('pointerdown', ev => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = VIEW_W / rect.width, scaleY = VIEW_H / rect.height;
+  const mx = (ev.clientX - rect.left) * scaleX, my = (ev.clientY - rect.top) * scaleY;
+  const dx = mx - (VIEW_W - 26), dy = my - 26;
+  if (dx * dx + dy * dy <= 18 * 18) {
+    ev.stopImmediatePropagation();
+    ev.preventDefault();
+    initAudio();
+    toggleMute();
+  }
+});
+
 // ---------- input ----------
 const keys = {};
 let anyKeyPressed = false;
@@ -54,9 +68,25 @@ const edge = {
 
 // ---------- tiny synth sfx + ambience ----------
 let AC = null;
+let masterGain = null;
 let ambienceStarted = false;
+let muted = false;
+try { muted = localStorage.getItem('pop_muted') === '1'; } catch (e) {}
+function setMuted(m){
+  muted = m;
+  try { localStorage.setItem('pop_muted', m ? '1' : '0'); } catch (e) {}
+  if (masterGain) masterGain.gain.value = m ? 0 : 1;
+}
+function toggleMute(){ setMuted(!muted); }
 function initAudio(){
-  if (!AC) { try { AC = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+  if (!AC) {
+    try {
+      AC = new (window.AudioContext||window.webkitAudioContext)();
+      masterGain = AC.createGain();
+      masterGain.gain.value = muted ? 0 : 1;
+      masterGain.connect(AC.destination);
+    } catch(e){}
+  }
   startAmbience();
 }
 function startAmbience(){
@@ -65,7 +95,7 @@ function startAmbience(){
   try {
     // a low, slowly breathing drone — the tower's own ambience
     const droneGain = AC.createGain(); droneGain.gain.value = 0.05;
-    droneGain.connect(AC.destination);
+    droneGain.connect(masterGain);
     const o1 = AC.createOscillator(); o1.type = 'sine'; o1.frequency.value = 55;
     const o2 = AC.createOscillator(); o2.type = 'sine'; o2.frequency.value = 82.5;
     const filt = AC.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 300;
@@ -83,7 +113,7 @@ function startAmbience(){
     const noise = AC.createBufferSource(); noise.buffer = buf; noise.loop = true;
     const noiseFilt = AC.createBiquadFilter(); noiseFilt.type = 'lowpass'; noiseFilt.frequency.value = 500;
     const noiseGain = AC.createGain(); noiseGain.gain.value = 0.018;
-    noise.connect(noiseFilt); noiseFilt.connect(noiseGain); noiseGain.connect(AC.destination);
+    noise.connect(noiseFilt); noiseFilt.connect(noiseGain); noiseGain.connect(masterGain);
     noise.start();
   } catch (e) {}
 }
@@ -91,7 +121,7 @@ function sfx(kind){
   if (!AC) return;
   const t = AC.currentTime;
   const o = AC.createOscillator(), g = AC.createGain();
-  o.connect(g); g.connect(AC.destination);
+  o.connect(g); g.connect(masterGain);
   const P = {
     jump:   [ 'square', 300, 520, 0.08, 0.05 ],
     land:   [ 'triangle', 120, 60, 0.1, 0.08 ],
@@ -106,6 +136,7 @@ function sfx(kind){
     win:    [ 'sine', 440, 880, 0.9, 0.08 ],
     die:    [ 'sawtooth', 300, 40, 0.7, 0.1 ],
     checkpoint: [ 'sine', 700, 1250, 0.3, 0.05 ],
+    roar:   [ 'sawtooth', 180, 70, 0.4, 0.09 ],
   }[kind];
   if (!P) return;
   o.type = P[0];
@@ -219,7 +250,7 @@ function resetLevel(){
   guard = guardPos ? {
     x: guardPos.x * TILE + 4, y: (guardPos.y + 1) * TILE - 46,
     w: 22, h: 45, vx: 0, vy: 0, dir: -1,
-    onGround: false, hp: 3, dead: false, blockT: 0,
+    onGround: false, hp: 3, dead: false, blockT: 0, enraged: false,
     homeX: guardPos.x * TILE, thinkT: 1.2, telegraphT: 0, strikeT: 0, hurtT: 0,
   } : null;
 
@@ -275,6 +306,18 @@ function feetTiles(e){
   const out = [];
   for (let x = x0; x <= x1; x++) out.push({ x, y });
   return out;
+}
+function spawnLandingDust(x, y, intensity){
+  const n = 5 + Math.floor(intensity * 4);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n - 0.5) * Math.PI * 0.9;
+    particles.push({
+      x, y,
+      vx: Math.sin(a) * (60 + Math.random() * 40) * intensity,
+      vy: -Math.abs(Math.cos(a)) * (30 + Math.random() * 30) * intensity - 10,
+      life: 0.4, maxLife: 0.4, r: 2 + Math.random() * 1.8, c: 'rgba(160,145,120,0.5)'
+    });
+  }
 }
 
 // ---------- player ----------
@@ -387,6 +430,12 @@ function updatePlayer(dt){
           if (guard.hp <= 0) {
             guard.dead = true;
             showMessage('The guard is defeated.');
+          } else if (guard.hp === 1 && !guard.enraged) {
+            guard.enraged = true;
+            guard.thinkT = 0.3;
+            sfx('roar');
+            showMessage('The guard fights with new fury!', 2.5);
+            shake = Math.max(shake, 5);
           }
         }
       }
@@ -406,6 +455,7 @@ function updatePlayer(dt){
       if (fallTiles >= 13) killPlayer('A fall from that height is certain death.');
       else if (fallTiles >= 5.5) { hurtPlayer(1, 'The fall broke the prince.'); sfx('land'); }
       else if (fallTiles > 1.5) sfx('land');
+      if (fallTiles > 0.9) spawnLandingDust(p.x + p.w / 2, p.y + p.h - 2, Math.min(fallTiles / 3, 1.6));
     }
     p.peakY = p.y;
     for (const ft of feetTiles(p)) {
@@ -442,6 +492,19 @@ function updatePlayer(dt){
 
   // --- run animation phase ---
   if (p.onGround && Math.abs(p.vx) > 20) p.runPhase += dt * Math.abs(p.vx) / 26;
+
+  // --- running dust ---
+  if (p.onGround && Math.abs(p.vx) > RUN_SPD * 0.55) {
+    p.dustT = (p.dustT || 0) - dt;
+    if (p.dustT <= 0) {
+      p.dustT = 0.085;
+      particles.push({
+        x: p.x + p.w / 2 - Math.sign(p.vx) * 8, y: p.y + p.h - 3,
+        vx: -Math.sign(p.vx) * 30 + (Math.random() - 0.5) * 20, vy: -30 - Math.random() * 20,
+        life: 0.3, maxLife: 0.3, r: 1.6 + Math.random() * 1.2, c: 'rgba(150,135,110,0.55)'
+      });
+    }
+  } else { p.dustT = 0; }
 
   // --- pickups & interactions ---
   const pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
@@ -536,7 +599,7 @@ function updateGuard(dt){
   if (engaged) {
     g.dir = px > gx ? 1 : -1;
     if (dist > TILE * 1.35) {
-      g.vx = g.dir * 95;
+      g.vx = g.dir * (g.enraged ? 145 : 95);
       g.telegraphT = 0;
     } else {
       // in striking range
@@ -557,12 +620,12 @@ function updateGuard(dt){
               p.vx = g.dir * 190; p.vy = Math.min(p.vy, -110); // knockback
             }
           }
-          g.strikeT = 0.35;
-          g.thinkT = 0.9 + (Math.abs(Math.sin(g.x * 12.9)) * 0.9);
+          g.strikeT = g.enraged ? 0.22 : 0.35;
+          g.thinkT = (g.enraged ? 0.4 : 0.9) + (Math.abs(Math.sin(g.x * 12.9)) * (g.enraged ? 0.4 : 0.9));
         }
       } else {
         g.thinkT -= dt;
-        if (g.thinkT <= 0) g.telegraphT = 0.4;
+        if (g.thinkT <= 0) g.telegraphT = g.enraged ? 0.22 : 0.4;
       }
     }
   } else {
@@ -1067,9 +1130,9 @@ function drawWorld(){
 
   // particles
   for (const pt of particles) {
-    ctx.globalAlpha = Math.max(pt.life / 0.6, 0);
+    ctx.globalAlpha = Math.max(pt.life / (pt.maxLife || 0.6), 0);
     ctx.fillStyle = pt.c;
-    ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r || 2.2, 0, 7); ctx.fill();
   }
   ctx.globalAlpha = 1;
 
@@ -1491,6 +1554,14 @@ function drawFigure(f, isGuard){
     ctx.beginPath(); ctx.ellipse(0, 1, f.dead ? 17 : 12, 3.2, 0, 0, 7); ctx.fill();
   }
   ctx.scale(f.dir || 1, 1);
+  if (isGuard && f.enraged && !f.dead) { // enrage aura — the fight just got harder
+    const pulse = 0.5 + 0.5 * Math.sin(tNow * 7);
+    const gr = ctx.createRadialGradient(0, -24, 2, 0, -24, 26 + pulse * 4);
+    gr.addColorStop(0, `rgba(220,40,20,${0.35 + pulse * 0.15})`);
+    gr.addColorStop(1, 'rgba(220,40,20,0)');
+    ctx.fillStyle = gr;
+    ctx.fillRect(-34, -56, 68, 68);
+  }
   const bob = (frame === 'idle') ? Math.round(Math.sin(tNow * 2.2) + 0.5) : 0;
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(img, -FRAME_W, -FRAME_H * SPR_SCALE + bob, FRAME_W * SPR_SCALE, FRAME_H * SPR_SCALE);
@@ -1533,7 +1604,34 @@ function heartGem(bx, by, lit, litColor, dimColor){
   }
 }
 
+function drawSpeakerIcon(cx, cy, isMuted){
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = '#e8e0d0';
+  ctx.beginPath();
+  ctx.moveTo(-9, -4); ctx.lineTo(-4, -4); ctx.lineTo(2, -9); ctx.lineTo(2, 9); ctx.lineTo(-4, 4); ctx.lineTo(-9, 4);
+  ctx.closePath(); ctx.fill();
+  if (isMuted) {
+    ctx.strokeStyle = '#d03028'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(5, -6); ctx.lineTo(13, 6); ctx.moveTo(13, -6); ctx.lineTo(5, 6); ctx.stroke();
+  } else {
+    ctx.strokeStyle = 'rgba(232,224,208,0.85)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(2, 0, 6, -0.7, 0.7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(2, 0, 10, -0.6, 0.6); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawMuteButton(){
+  const cx = VIEW_W - 26, cy = 26;
+  ctx.fillStyle = 'rgba(10,7,4,0.55)';
+  ctx.beginPath(); ctx.arc(cx, cy, 17, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(201,168,106,0.5)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, 17, 0, 7); ctx.stroke();
+  drawSpeakerIcon(cx, cy, muted);
+}
+
 function drawHUD(){
+  drawMuteButton();
   // bottom bar, PoP style
   const bg = ctx.createLinearGradient(0, VIEW_H - 34, 0, VIEW_H);
   bg.addColorStop(0, 'rgba(10,6,3,0.88)'); bg.addColorStop(1, 'rgba(0,0,0,0.94)');
@@ -1597,6 +1695,54 @@ function drawOverlay(title, sub, sub2){
   ctx.textAlign = 'left';
 }
 
+function drawTitleLegend(){
+  const items = [
+    { icon: 'move', label: 'Run' },
+    { icon: 'jump', label: 'Jump' },
+    { icon: 'walk', label: 'Walk past spikes' },
+    { icon: 'sword', label: 'Attack' },
+    { icon: 'shield', label: 'Parry' },
+  ];
+  const y = VIEW_H / 2 + 128 + 33;
+  const spacing = 150;
+  const startX = VIEW_W / 2 - (items.length - 1) * spacing / 2;
+  ctx.textAlign = 'center';
+  items.forEach((it, i) => {
+    const x = startX + i * spacing;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.strokeStyle = 'rgba(201,168,106,0.6)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, 18, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#e8e0d0';
+    if (it.icon === 'move') {
+      ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(-2, -5); ctx.lineTo(-2, 5); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(2, -5); ctx.lineTo(2, 5); ctx.fill();
+    } else if (it.icon === 'jump') {
+      ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(-6, 2); ctx.lineTo(6, 2); ctx.fill();
+      ctx.fillRect(-2, 2, 4, 7);
+    } else if (it.icon === 'walk') {
+      ctx.fillStyle = '#8ab04a';
+      ctx.beginPath(); ctx.ellipse(0, 2, 8, 5, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(6, 0, 3, 0, 7); ctx.fill();
+    } else if (it.icon === 'sword') {
+      ctx.save(); ctx.rotate(-0.6);
+      ctx.fillStyle = '#dfe3ea'; ctx.fillRect(-1.5, -9, 3, 14);
+      ctx.fillStyle = '#8a6a30'; ctx.fillRect(-5, 4, 10, 3);
+      ctx.restore();
+    } else if (it.icon === 'shield') {
+      ctx.fillStyle = '#7a8aa8';
+      ctx.beginPath();
+      ctx.moveTo(0, -8); ctx.lineTo(7, -4); ctx.lineTo(6, 4); ctx.lineTo(0, 9); ctx.lineTo(-6, 4); ctx.lineTo(-7, -4);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    ctx.fillStyle = '#9a8a68';
+    ctx.font = '11px Georgia';
+    ctx.fillText(it.label, x, y + 32);
+  });
+  ctx.textAlign = 'left';
+}
+
 // ---------- main loop ----------
 state = 'title';
 resetLevel();
@@ -1612,6 +1758,7 @@ function frame(now){
     drawOverlay('Prince of the Lost Tower',
       'Escape the dungeon before the hour runs out. Find the sword — you will need it.',
       'Press Enter to begin' + b);
+    drawTitleLegend();
     if (edge.enter()) { state = 'play'; showMessage('Escape. You have one hour.', 4); }
   } else if (state === 'play') {
     if (keyEdge['KeyP'] || keyEdge['Escape']) {
