@@ -43,7 +43,10 @@ kill. Deaths return you to the last checkpoint — the clock keeps running.
 Single `game.js` (vanilla JavaScript, Canvas 2D, WebAudio synth sound effects).
 Tile-based physics with ledge-grab & climb, timed gates, pressure plates,
 loose-tile debris, a patrol/duel guard AI, camera with screen-shake, and
-torch-lit dungeon rendering. Characters are hand-authored 16×24 pixel-art
+torch-lit dungeon rendering with a real-time lighting pass (flickering torch
+pools punched out of a darkness layer), a level pre-baked to an offscreen
+canvas with edge-aware brickwork, moonlit barred windows with light shafts,
+drifting dust motes, contact shadows, and a vignette. Characters are hand-authored 16×24 pixel-art
 sprite sheets (idle, 4-frame run cycle, jump, fall, hang, climb, sword poses)
 baked to offscreen canvases with palette swaps for the prince and the guard —
 no external assets, everything is drawn in code. Open `index.html#sprites` to
